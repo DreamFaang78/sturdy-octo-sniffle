@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { sendAiSensyWhatsAppMessage } from '@/lib/aisensy';
 import { INITIAL_INGESTION_LOGS, INITIAL_LEADS } from '@/lib/mockDb';
+
 
 // Helper function: Fetch from Meta Graph API with Retry & Exponential Backoff
 async function fetchGraphApiWithRetry(url: string, maxRetries = 3, initialDelayMs = 1000): Promise<any> {
@@ -225,19 +225,12 @@ export async function POST(req: NextRequest) {
       await supabase.from('lead_ingestion_log').insert(successLogData);
       INITIAL_INGESTION_LOGS.unshift({ id: `ingest-${Date.now()}`, ...successLogData, status: 'success' });
 
-      // Trigger AiSensy Welcome WhatsApp message
-      await sendAiSensyWhatsAppMessage({
-        destinationPhone: phone,
-        campaignName: 'welcome_lead',
-        userName: name,
-        leadId: insertedLead?.id || leadgenId,
-      });
-
       return NextResponse.json({
         success: true,
         message: 'Lead processed successfully and logged to intake feed',
         leadId: insertedLead?.id || leadgenId,
       });
+
     }
 
     return NextResponse.json({ success: true, message: 'Event acknowledged' });

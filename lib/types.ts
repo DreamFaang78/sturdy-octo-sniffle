@@ -66,17 +66,23 @@ export interface StatusHistory {
   changed_at: string;
 }
 
-export interface WhatsAppLog {
+export interface WhatsAppTemplate {
+  key: string;
+  label: string;
+  text_template: string;
+  updated_at?: string;
+}
+
+export interface ManualWhatsAppLog {
   id: string;
   lead_id?: string | null;
   phone: string;
-  template_name: string;
-  payload?: Record<string, any>;
-  status: 'sent' | 'failed';
-  response_data?: Record<string, any>;
-  error_message?: string | null;
+  template_key: string;
+  sender_name: string;
+  status: 'sent_manual'; // Self-reported by user
   sent_at: string;
 }
+
 
 export interface DashboardMetrics {
   totalLeads: number;

@@ -312,8 +312,8 @@ export default function AdminDashboardPage() {
 
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl flex flex-col justify-between">
             <div>
-              <h3 className="text-sm font-semibold text-white mb-2">Automated Integrations</h3>
-              <p className="text-xs text-slate-400">System connectivity & webhook status for Facebook Ads and AiSensy WhatsApp.</p>
+              <h3 className="text-sm font-semibold text-white mb-2">Messaging & Webhook System</h3>
+              <p className="text-xs text-slate-400">Meta Facebook Lead Ads Webhook & WhatsApp Business Templates Store.</p>
               
               <div className="mt-4 space-y-2">
                 <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl flex items-center justify-between text-xs">
@@ -326,10 +326,10 @@ export default function AdminDashboardPage() {
 
                 <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl flex items-center justify-between text-xs">
                   <div className="flex items-center space-x-2">
-                    <div className="w-2.5 h-2.5 rounded-full bg-emerald-400"></div>
-                    <span className="font-semibold text-slate-200">AiSensy WhatsApp API</span>
+                    <div className="w-2.5 h-2.5 rounded-full bg-teal-400"></div>
+                    <span className="font-semibold text-slate-200">WhatsApp Business Templates</span>
                   </div>
-                  <span className="text-emerald-400 font-mono font-medium">Ready</span>
+                  <span className="text-teal-400 font-mono font-semibold">8 Active Templates</span>
                 </div>
               </div>
             </div>
@@ -339,10 +339,11 @@ export default function AdminDashboardPage() {
                 href="/admin/settings"
                 className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-lg flex items-center justify-center space-x-1.5 transition"
               >
-                <span>Configure Webhooks & API Keys</span>
+                <span>Manage WhatsApp Templates & Settings</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </Link>
             </div>
+
           </div>
 
         </div>

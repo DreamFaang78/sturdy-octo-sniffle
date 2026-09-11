@@ -1,14 +1,13 @@
 import { Lead, PatientCareJourney, JourneyStepStatus } from './types';
 import { INITIAL_CARE_JOURNEYS } from './mockDb';
-import { sendAiSensyWhatsAppMessage } from './aisensy';
-import { createAdminClient } from './supabase/admin';
+import { openWhatsAppAndLogAction, getWhatsAppTemplate, renderWhatsAppTemplateText, generateWhatsAppWaLink } from './whatsapp';
+
 
 // Get existing care journey or initialize a new one for a converted lead
 export function getOrCreateCareJourney(leadId: string): PatientCareJourney {
   let existing = INITIAL_CARE_JOURNEYS.find((j) => j.lead_id === leadId);
 
   if (!existing) {
-    const todayStr = new Date().toISOString().split('T')[0];
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     const tomorrowStr = tomorrow.toISOString().split('T')[0];
@@ -35,20 +34,21 @@ export function getOrCreateCareJourney(leadId: string): PatientCareJourney {
   return existing;
 }
 
-// Step 1: Order Confirmation WhatsApp (Fires immediately upon conversion)
-export async function triggerStep1OrderConfirmation(lead: Lead, journey: PatientCareJourney): Promise<PatientCareJourney> {
-  if (journey.step1_status === 'sent') return journey;
-
-  const result = await sendAiSensyWhatsAppMessage({
-    destinationPhone: lead.phone,
-    campaignName: 'order_confirmation',
-    userName: lead.name,
-    leadId: lead.id,
-  });
+// Step 1: Order Confirmation (Manual wa.me link trigger)
+export function triggerStep1OrderConfirmation(lead: Lead, journey: PatientCareJourney, callerName = 'Telecaller'): PatientCareJourney {
+  openWhatsAppAndLogAction(
+    lead.id,
+    lead.phone,
+    'order_confirmation',
+    'Order Confirmation',
+    callerName,
+    lead.name,
+    lead.campaign
+  );
 
   const updated: PatientCareJourney = {
     ...journey,
-    step1_status: result.success ? 'sent' : 'failed',
+    step1_status: 'sent',
     step1_sent_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
@@ -57,24 +57,27 @@ export async function triggerStep1OrderConfirmation(lead: Lead, journey: Patient
   return updated;
 }
 
-// Step 2: Attach Diet Chart Image & Send Next Calendar Day WhatsApp
-export async function attachDietChartAndSend(
+// Step 2: Diet Chart WhatsApp (Manual wa.me link trigger + Image attachment note)
+export function attachDietChartAndSend(
   lead: Lead,
   journey: PatientCareJourney,
-  imageUrl: string
-): Promise<PatientCareJourney> {
-  const result = await sendAiSensyWhatsAppMessage({
-    destinationPhone: lead.phone,
-    campaignName: 'diet_chart_notification', // AiSensy template with IMAGE header
-    userName: lead.name,
-    leadId: lead.id,
-    mediaUrl: imageUrl,
-  });
+  imageUrl: string,
+  callerName = 'Telecaller'
+): PatientCareJourney {
+  openWhatsAppAndLogAction(
+    lead.id,
+    lead.phone,
+    'diet_chart_reminder',
+    'Diet Chart Protocol',
+    callerName,
+    lead.name,
+    lead.campaign
+  );
 
   const updated: PatientCareJourney = {
     ...journey,
     step2_diet_chart_url: imageUrl,
-    step2_status: result.success ? 'sent' : 'failed',
+    step2_status: 'sent',
     step2_sent_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
@@ -84,16 +87,20 @@ export async function attachDietChartAndSend(
 }
 
 // Step 3: Trigger Dispatch WhatsApp + Create Same-Day Caller Check-in Call Task
-export async function triggerStep3Dispatch(
+export function triggerStep3Dispatch(
   lead: Lead,
-  journey: PatientCareJourney
-): Promise<PatientCareJourney> {
-  const result = await sendAiSensyWhatsAppMessage({
-    destinationPhone: lead.phone,
-    campaignName: 'dispatch_notification',
-    userName: lead.name,
-    leadId: lead.id,
-  });
+  journey: PatientCareJourney,
+  callerName = 'Telecaller'
+): PatientCareJourney {
+  openWhatsAppAndLogAction(
+    lead.id,
+    lead.phone,
+    'dispatch_notice',
+    'Order Dispatch Notification',
+    callerName,
+    lead.name,
+    lead.campaign
+  );
 
   const todayStr = new Date().toISOString().split('T')[0];
 
@@ -103,7 +110,7 @@ export async function triggerStep3Dispatch(
 
   const updated: PatientCareJourney = {
     ...journey,
-    step3_dispatch_status: result.success ? 'sent' : 'failed',
+    step3_dispatch_status: 'sent',
     step3_dispatch_sent_at: new Date().toISOString(),
     step3_call_task_status: 'pending',
     updated_at: new Date().toISOString(),

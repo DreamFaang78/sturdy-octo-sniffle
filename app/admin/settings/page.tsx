@@ -14,14 +14,14 @@ import {
   Copy,
   Info
 } from 'lucide-react';
-import { Profile } from '@/lib/types';
-import { INITIAL_PROFILES } from '@/lib/mockDb';
+import { Profile, WhatsAppTemplate } from '@/lib/types';
+import { INITIAL_PROFILES, INITIAL_WHATSAPP_TEMPLATES } from '@/lib/mockDb';
 
 export default function SettingsPage() {
   const [currentUser, setCurrentUser] = useState<Profile>(INITIAL_PROFILES[0]);
-  const [aisensyKey, setAisensyKey] = useState('demo_aisensy_api_key');
-  const [aisensyWelcomeCampaign, setAisensyWelcomeCampaign] = useState('welcome_lead');
+  const [templates, setTemplates] = useState<WhatsAppTemplate[]>(INITIAL_WHATSAPP_TEMPLATES);
   const [metaVerifyToken, setMetaVerifyToken] = useState('hommed_lead_crm_verify_token_2026');
+
   const [metaAppSecret, setMetaAppSecret] = useState('demo_meta_app_secret');
   const [metaAccessToken, setMetaAccessToken] = useState('demo_meta_access_token');
   const [autoAssignOnIngest, setAutoAssignOnIngest] = useState(false);
@@ -155,40 +155,49 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          {/* 2. AiSensy WhatsApp REST Integration */}
+          {/* 2. WhatsApp Business Templates Store Manager */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
-            <div className="flex items-center space-x-2">
-              <div className="p-2 bg-emerald-500/20 text-emerald-400 rounded-xl">
-                <MessageSquare className="w-5 h-5" />
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <div className="p-2 bg-emerald-500/20 text-emerald-400 rounded-xl">
+                  <MessageSquare className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-white text-base">WhatsApp Business Templates Store</h3>
+                  <p className="text-xs text-slate-400">Manage prewritten click-to-WhatsApp message templates with {`{{name}}`} substitution.</p>
+                </div>
               </div>
-              <div>
-                <h3 className="font-bold text-white text-base">AiSensy WhatsApp API Config</h3>
-                <p className="text-xs text-slate-400">Endpoint: `POST https://backend.aisensy.com/campaign/t1/api/v2`</p>
-              </div>
+              <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 text-xs font-mono font-semibold rounded border border-emerald-500/20">
+                wa.me (₹0 API Cost)
+              </span>
             </div>
 
-            <div className="space-y-3 pt-2">
-              <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">AiSensy Secret API Key</label>
-                <input
-                  type="password"
-                  value={aisensyKey}
-                  onChange={(e) => setAisensyKey(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 font-mono"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">Default Welcome Campaign Template Name</label>
-                <input
-                  type="text"
-                  value={aisensyWelcomeCampaign}
-                  onChange={(e) => setAisensyWelcomeCampaign(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 font-mono"
-                />
-              </div>
+            <div className="space-y-4 pt-2">
+              {templates.map((tmpl, idx) => (
+                <div key={tmpl.key} className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-teal-400 uppercase tracking-wider">{tmpl.label}</span>
+                    <span className="text-[10px] text-slate-500 font-mono">key: {tmpl.key}</span>
+                  </div>
+                  <textarea
+                    rows={2}
+                    value={tmpl.text_template}
+                    onChange={(e) => {
+                      const updated = [...templates];
+                      updated[idx].text_template = e.target.value;
+                      setTemplates(updated);
+                    }}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-teal-500 resize-none font-mono"
+                  />
+                  <div className="text-[10px] text-slate-400 flex items-center justify-between">
+                    <span>Supports placeholders: <code className="text-teal-300 font-mono">{`{{name}}`}</code>, <code className="text-teal-300 font-mono">{`{{campaign}}`}</code></span>
+                    <span className="text-slate-500 font-mono">Length: {tmpl.text_template.length} chars</span>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
+
 
           {/* 3. 7-Day Follow-up Cadence Rules */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">

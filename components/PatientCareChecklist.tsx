@@ -4,15 +4,14 @@ import React, { useState } from 'react';
 import { 
   CheckCircle2, 
   Clock, 
-  Send, 
+  ExternalLink, 
   Image as ImageIcon, 
   Truck, 
   PhoneCall, 
-  AlertTriangle, 
+  AlertCircle, 
   Sparkles,
   Info,
-  Calendar,
-  ExternalLink
+  Layers
 } from 'lucide-react';
 import { Lead, PatientCareJourney } from '@/lib/types';
 import { 
@@ -49,9 +48,6 @@ export default function PatientCareChecklist({ lead, onUpdate }: PatientCareChec
     journey.step2_diet_chart_url || PRESET_DIET_CHARTS[0].url
   );
   const [customChartInput, setCustomChartInput] = useState('');
-  const [isSendingStep1, setIsSendingStep1] = useState(false);
-  const [isSendingStep2, setIsSendingStep2] = useState(false);
-  const [isSendingStep3, setIsSendingStep3] = useState(false);
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
 
   const showFeedback = (msg: string) => {
@@ -59,34 +55,28 @@ export default function PatientCareChecklist({ lead, onUpdate }: PatientCareChec
     setTimeout(() => setActionFeedback(null), 3500);
   };
 
-  // Step 1 Trigger
-  const handleStep1Send = async () => {
-    setIsSendingStep1(true);
-    const updated = await triggerStep1OrderConfirmation(lead, journey);
+  // Step 1 Trigger (wa.me link)
+  const handleStep1Send = () => {
+    const updated = triggerStep1OrderConfirmation(lead, journey);
     setJourney(updated);
-    setIsSendingStep1(false);
-    showFeedback('Step 1: Order confirmation WhatsApp sent!');
+    showFeedback('Opened wa.me link & recorded Step 1 manual send.');
     if (onUpdate) onUpdate();
   };
 
-  // Step 2 Trigger
-  const handleStep2Send = async () => {
+  // Step 2 Trigger (wa.me link + image attachment note)
+  const handleStep2Send = () => {
     const finalUrl = customChartInput.trim() || selectedChartUrl;
-    setIsSendingStep2(true);
-    const updated = await attachDietChartAndSend(lead, journey, finalUrl);
+    const updated = attachDietChartAndSend(lead, journey, finalUrl);
     setJourney(updated);
-    setIsSendingStep2(false);
-    showFeedback('Step 2: Diet Chart image WhatsApp dispatched!');
+    showFeedback('Opened wa.me link & recorded Step 2 manual send.');
     if (onUpdate) onUpdate();
   };
 
-  // Step 3 Dispatch Trigger
-  const handleStep3DispatchSend = async () => {
-    setIsSendingStep3(true);
-    const updated = await triggerStep3Dispatch(lead, journey);
+  // Step 3 Dispatch Trigger (wa.me link)
+  const handleStep3DispatchSend = () => {
+    const updated = triggerStep3Dispatch(lead, journey);
     setJourney(updated);
-    setIsSendingStep3(false);
-    showFeedback('Step 3: Dispatch message sent & Post-dispatch check-in call task created!');
+    showFeedback('Opened wa.me link & created Post-dispatch check-in call task.');
     if (onUpdate) onUpdate();
   };
 
@@ -94,7 +84,7 @@ export default function PatientCareChecklist({ lead, onUpdate }: PatientCareChec
   const handleStep3CallComplete = () => {
     const updated = completeStep3CallTask(journey);
     setJourney(updated);
-    showFeedback('Post-dispatch check-in call marked complete!');
+    showFeedback('Post-dispatch check-in call marked complete.');
     if (onUpdate) onUpdate();
   };
 
@@ -108,8 +98,8 @@ export default function PatientCareChecklist({ lead, onUpdate }: PatientCareChec
             <Sparkles className="w-4 h-4" />
           </div>
           <div>
-            <h2 className="text-base font-bold text-white tracking-tight">Post-Conversion Patient Care Journey</h2>
-            <p className="text-xs text-slate-400">3-Step mandatory care checklist & WhatsApp automation timeline</p>
+            <h2 className="text-base font-bold text-white tracking-tight">Post-Conversion Patient Care Checklist</h2>
+            <p className="text-xs text-slate-400">3-Step manual WhatsApp Business & call task timeline</p>
           </div>
         </div>
 
@@ -137,21 +127,21 @@ export default function PatientCareChecklist({ lead, onUpdate }: PatientCareChec
                 <span className="font-bold text-white text-sm">Step 1: Order Confirmation WhatsApp</span>
                 {journey.step1_status === 'sent' ? (
                   <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 text-[10px] font-bold rounded uppercase border border-emerald-500/30">
-                    Sent
+                    Sent (manual) — Self-reported
                   </span>
                 ) : (
                   <span className="px-2 py-0.5 bg-amber-500/20 text-amber-300 text-[10px] font-bold rounded uppercase border border-amber-500/30">
-                    Pending Trigger
+                    Action Available
                   </span>
                 )}
               </div>
               <p className="text-xs text-slate-400 mt-1">
-                Fires automatically via AiSensy API the moment status is marked Converted.
+                Appears when status becomes Converted. Opens wa.me pre-filled chat with order confirmation.
               </p>
               {journey.step1_sent_at && (
                 <div className="text-[10px] text-slate-500 font-mono mt-1 flex items-center space-x-1">
                   <Clock className="w-3 h-3 text-emerald-400" />
-                  <span>Dispatched on: {new Date(journey.step1_sent_at).toLocaleString()}</span>
+                  <span>Logged: {new Date(journey.step1_sent_at).toLocaleString()} (Unverified delivery)</span>
                 </div>
               )}
             </div>
@@ -159,11 +149,10 @@ export default function PatientCareChecklist({ lead, onUpdate }: PatientCareChec
 
           <button
             onClick={handleStep1Send}
-            disabled={isSendingStep1}
-            className="inline-flex items-center space-x-1.5 px-3.5 py-2 bg-teal-500/10 hover:bg-teal-500 text-teal-300 hover:text-slate-950 text-xs font-semibold rounded-lg transition border border-teal-500/30 shrink-0"
+            className="inline-flex items-center space-x-1.5 px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold rounded-xl transition shadow shrink-0"
           >
-            <Send className="w-3.5 h-3.5" />
-            <span>{journey.step1_status === 'sent' ? 'Resend WhatsApp' : 'Send WhatsApp Now'}</span>
+            <ExternalLink className="w-3.5 h-3.5" />
+            <span>Open WhatsApp Chat</span>
           </button>
         </div>
 
@@ -181,21 +170,21 @@ export default function PatientCareChecklist({ lead, onUpdate }: PatientCareChec
                   <span className="font-bold text-white text-sm">Step 2: Diet Chart (Image) WhatsApp</span>
                   {journey.step2_status === 'sent' ? (
                     <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 text-[10px] font-bold rounded uppercase border border-emerald-500/30">
-                      Sent
+                      Sent (manual) — Self-reported
                     </span>
                   ) : (
                     <span className="px-2 py-0.5 bg-blue-500/20 text-blue-300 text-[10px] font-bold rounded uppercase border border-blue-500/30">
-                      Scheduled for Next Day ({journey.step2_scheduled_for || 'Tomorrow'})
+                      Due Next Day ({journey.step2_scheduled_for || 'Tomorrow'})
                     </span>
                   )}
                 </div>
                 <p className="text-xs text-slate-400 mt-1">
-                  Scheduled to send automatically the next calendar day. Requires diet chart image attachment.
+                  Surfaces as due next calendar day. Review patient diet chart image below before sending.
                 </p>
                 {journey.step2_sent_at && (
                   <div className="text-[10px] text-slate-500 font-mono mt-1 flex items-center space-x-1">
                     <Clock className="w-3 h-3 text-emerald-400" />
-                    <span>Dispatched on: {new Date(journey.step2_sent_at).toLocaleString()}</span>
+                    <span>Logged: {new Date(journey.step2_sent_at).toLocaleString()} (Unverified delivery)</span>
                   </div>
                 )}
               </div>
@@ -203,26 +192,29 @@ export default function PatientCareChecklist({ lead, onUpdate }: PatientCareChec
 
             <button
               onClick={handleStep2Send}
-              disabled={isSendingStep2}
-              className="inline-flex items-center space-x-1.5 px-3.5 py-2 bg-teal-500/10 hover:bg-teal-500 text-teal-300 hover:text-slate-950 text-xs font-semibold rounded-lg transition border border-teal-500/30 shrink-0"
+              className="inline-flex items-center space-x-1.5 px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold rounded-xl transition shadow shrink-0"
             >
-              <ImageIcon className="w-3.5 h-3.5" />
-              <span>{journey.step2_status === 'sent' ? 'Resend Diet Chart' : 'Send Image WhatsApp Now'}</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+              <span>Open WhatsApp Chat</span>
             </button>
           </div>
 
-          {/* AISENSY MEDIA TEMPLATE NOTICE FLAG */}
-          <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg text-xs text-amber-300/90 flex items-start space-x-2">
+          {/* MANUAL 2-TAP ATTACHMENT NOTICE FLAG */}
+          <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-xs text-amber-300 flex items-start space-x-2">
             <Info className="w-4 h-4 shrink-0 text-amber-400 mt-0.5" />
             <div className="leading-relaxed">
-              <span className="font-bold text-amber-300">AiSensy Template Requirement Notice: </span>
-              Sending a diet chart image via AiSensy requires an approved template supporting an <code className="bg-slate-900 px-1 py-0.5 rounded text-amber-200 font-mono">IMAGE</code> header (e.g. campaign <code className="bg-slate-900 px-1 py-0.5 rounded text-amber-200 font-mono">diet_chart_notification</code>) created & approved on your AiSensy dashboard.
+              <span className="font-bold text-amber-300">2-Tap Manual Action Note: </span>
+              Clicking &quot;Open WhatsApp Chat&quot; pre-fills the text in WhatsApp Business. You must <strong>attach the diet chart image manually</strong> in WhatsApp before hitting send.
             </div>
           </div>
 
-          {/* Diet Chart Image Selector */}
-          <div className="p-3 bg-slate-900 border border-slate-800 rounded-lg space-y-2">
-            <label className="block text-xs font-semibold text-slate-300">Select Patient Diet Chart Image</label>
+          {/* Diet Chart Image Selector & Preview */}
+          <div className="p-3 bg-slate-900 border border-slate-800 rounded-xl space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-semibold text-slate-300">Patient Diet Chart Image Preview</label>
+              <span className="text-[10px] text-slate-500 font-mono">Select image for patient</span>
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               {PRESET_DIET_CHARTS.map((chart) => (
                 <button
@@ -245,15 +237,39 @@ export default function PatientCareChecklist({ lead, onUpdate }: PatientCareChec
             </div>
 
             {/* Custom URL Input */}
-            <div className="pt-2">
+            <div className="pt-1">
               <input
                 type="text"
                 value={customChartInput}
                 onChange={(e) => setCustomChartInput(e.target.value)}
-                placeholder="Or paste custom image URL (https://...)"
+                placeholder="Or paste custom diet chart image URL..."
                 className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-teal-500"
               />
             </div>
+
+            {/* Image Preview Thumbnail */}
+            {(customChartInput || selectedChartUrl) && (
+              <div className="mt-2 flex items-center space-x-3 bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+                <img
+                  src={customChartInput || selectedChartUrl}
+                  alt="Diet Chart Preview"
+                  className="w-16 h-16 object-cover rounded-lg border border-slate-700 shrink-0"
+                />
+                <div className="text-xs text-slate-300">
+                  <div className="font-semibold text-white">Active Diet Chart Image</div>
+                  <div className="text-[10px] text-slate-400 truncate max-w-xs">{customChartInput || selectedChartUrl}</div>
+                  <a
+                    href={customChartInput || selectedChartUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[10px] text-teal-400 hover:underline inline-flex items-center space-x-1 mt-1"
+                  >
+                    <span>View Full Image</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -268,40 +284,39 @@ export default function PatientCareChecklist({ lead, onUpdate }: PatientCareChec
               </div>
               <div>
                 <div className="flex items-center space-x-2">
-                  <span className="font-bold text-white text-sm">Step 3: Dispatch Message & Same-Day Check-in Call</span>
+                  <span className="font-bold text-white text-sm">Step 3: Dispatch Notice & Same-Day Call Task</span>
                   {journey.step3_dispatch_status === 'sent' ? (
                     <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 text-[10px] font-bold rounded uppercase border border-emerald-500/30">
-                      Dispatched
+                      Sent (manual) — Self-reported
                     </span>
                   ) : (
                     <span className="px-2 py-0.5 bg-slate-800 text-slate-400 text-[10px] font-bold rounded uppercase">
-                      Trigger on Shipped
+                      Action on Dispatch
                     </span>
                   )}
                 </div>
                 <p className="text-xs text-slate-400 mt-1">
-                  Fires when order is marked shipped/delivered: auto-sends WhatsApp dispatch alert AND creates a same-day call task (&ldquo;Post-dispatch check-in&rdquo;) for the caller.
+                  Surfaces on dispatch: opens wa.me dispatch notice AND creates a same-day call task (&ldquo;Post-dispatch check-in&rdquo;) in caller panel.
                 </p>
               </div>
             </div>
 
             <button
               onClick={handleStep3DispatchSend}
-              disabled={isSendingStep3}
-              className="inline-flex items-center space-x-1.5 px-3.5 py-2 bg-teal-500/10 hover:bg-teal-500 text-teal-300 hover:text-slate-950 text-xs font-semibold rounded-lg transition border border-teal-500/30 shrink-0"
+              className="inline-flex items-center space-x-1.5 px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold rounded-xl transition shadow shrink-0"
             >
-              <Truck className="w-3.5 h-3.5" />
-              <span>Trigger Dispatch & Task</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+              <span>Open WhatsApp Chat</span>
             </button>
           </div>
 
           {/* CALL TASK STATUS ROW */}
-          <div className="p-3 bg-slate-900 border border-slate-800 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+          <div className="p-3 bg-slate-900 border border-slate-800 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
             <div className="flex items-center space-x-2">
               <PhoneCall className="w-4 h-4 text-purple-400" />
               <div>
                 <span className="font-semibold text-white">Call Task: Post-dispatch check-in</span>
-                <div className="text-[10px] text-slate-400">Assigned to original caller ({lead.assignee?.name || 'Telecaller'})</div>
+                <div className="text-[10px] text-slate-400">Assigned to caller ({lead.assignee?.name || 'Telecaller'})</div>
               </div>
             </div>
 

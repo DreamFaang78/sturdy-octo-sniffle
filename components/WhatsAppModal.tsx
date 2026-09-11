@@ -1,65 +1,71 @@
 'use client';
 
 import React, { useState } from 'react';
-import { X, MessageSquare, Send, CheckCircle2, AlertCircle } from 'lucide-react';
+import { X, MessageSquare, ExternalLink, CheckCircle2, Info } from 'lucide-react';
 import { Lead } from '@/lib/types';
-import { sendAiSensyWhatsAppMessage } from '@/lib/aisensy';
+import { INITIAL_WHATSAPP_TEMPLATES } from '@/lib/mockDb';
+import { 
+  getWhatsAppTemplate, 
+  renderWhatsAppTemplateText, 
+  openWhatsAppAndLogAction 
+} from '@/lib/whatsapp';
 
 interface WhatsAppModalProps {
   isOpen: boolean;
   onClose: () => void;
   lead: Lead | null;
+  defaultTemplateKey?: string;
+  currentUserRole?: string;
 }
 
-export default function WhatsAppModal({ isOpen, onClose, lead }: WhatsAppModalProps) {
-  const [template, setTemplate] = useState('welcome_lead');
-  const [customMsg, setCustomMsg] = useState('');
-  const [sending, setSending] = useState(false);
-  const [statusMsg, setStatusMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+export default function WhatsAppModal({ 
+  isOpen, 
+  onClose, 
+  lead, 
+  defaultTemplateKey = 'followup_day1' 
+}: WhatsAppModalProps) {
+  const [selectedKey, setSelectedKey] = useState(defaultTemplateKey);
+  const [copiedNotice, setCopiedNotice] = useState(false);
 
   if (!isOpen || !lead) return null;
 
-  const handleSend = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSending(true);
-    setStatusMsg(null);
+  const currentTmpl = getWhatsAppTemplate(selectedKey);
+  const renderedMessage = renderWhatsAppTemplateText(
+    currentTmpl.text_template,
+    lead.name,
+    lead.campaign
+  );
 
-    const res = await sendAiSensyWhatsAppMessage({
-      destinationPhone: lead.phone,
-      campaignName: template,
-      userName: lead.name,
-      leadId: lead.id,
-      sourceParams: {
-        param1: lead.name,
-        param2: template === 'rto_address_reconfirm' ? 'Delivery Address Update' : 'Hommed Diagnostics',
-      },
-    });
-
-    setSending(false);
-    if (res.success) {
-      setStatusMsg({ type: 'success', text: `WhatsApp message dispatched to ${lead.phone} via AiSensy.` });
-      setTimeout(() => {
-        setStatusMsg(null);
-        onClose();
-      }, 1500);
-    } else {
-      setStatusMsg({ type: 'error', text: res.message || 'Failed to dispatch WhatsApp message.' });
-    }
+  const handleOpenWhatsApp = () => {
+    openWhatsAppAndLogAction(
+      lead.id,
+      lead.phone,
+      selectedKey,
+      currentTmpl.label,
+      'Telecaller',
+      lead.name,
+      lead.campaign
+    );
+    setCopiedNotice(true);
+    setTimeout(() => {
+      setCopiedNotice(false);
+      onClose();
+    }, 1200);
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4">
-      <div className="bg-slate-900 border border-slate-800 rounded-xl max-w-md w-full p-6 text-slate-100 shadow-2xl animate-in fade-in zoom-in duration-150">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 backdrop-blur-sm p-4">
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 text-slate-100 shadow-2xl animate-in fade-in zoom-in duration-150">
         
         {/* Header */}
         <div className="flex items-center justify-between pb-4 border-b border-slate-800">
           <div className="flex items-center space-x-2">
-            <div className="p-2 bg-emerald-500/20 text-emerald-400 rounded-lg">
+            <div className="p-2 bg-emerald-500/20 text-emerald-400 rounded-xl">
               <MessageSquare className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-semibold text-lg text-white">AiSensy WhatsApp Message</h3>
-              <p className="text-xs text-slate-400">Send automated template to {lead.name}</p>
+              <h3 className="font-bold text-lg text-white">Click-to-WhatsApp Business</h3>
+              <p className="text-xs text-slate-400">Pre-fill wa.me message link for {lead.name}</p>
             </div>
           </div>
           <button onClick={onClose} className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800">
@@ -67,57 +73,54 @@ export default function WhatsAppModal({ isOpen, onClose, lead }: WhatsAppModalPr
           </button>
         </div>
 
-        {/* Lead Info Pill */}
-        <div className="mt-4 p-3 bg-slate-950 border border-slate-800 rounded-lg flex items-center justify-between">
+        {/* Patient Info Pill */}
+        <div className="mt-4 p-3 bg-slate-950 border border-slate-800 rounded-xl flex items-center justify-between">
           <div>
             <div className="text-sm font-semibold text-white">{lead.name}</div>
-            <div className="text-xs text-slate-400">{lead.phone}</div>
+            <div className="text-xs text-slate-400 font-mono">{lead.phone}</div>
           </div>
-          <span className="px-2 py-0.5 bg-teal-500/10 text-teal-400 text-[10px] font-semibold uppercase tracking-wider rounded border border-teal-500/20">
+          <span className="px-2.5 py-0.5 bg-teal-500/10 text-teal-400 text-[10px] font-semibold uppercase tracking-wider rounded border border-teal-500/20">
             {lead.status.replace(/_/g, ' ')}
           </span>
         </div>
 
-        {/* Form */}
-        <form onSubmit={handleSend} className="mt-4 space-y-4">
+        {/* Template Selector */}
+        <div className="mt-4 space-y-3">
           <div>
-            <label className="block text-xs font-medium text-slate-300 mb-1">Approved AiSensy Template</label>
+            <label className="block text-xs font-semibold text-slate-300 mb-1">Select WhatsApp Template</label>
             <select
-              value={template}
-              onChange={(e) => setTemplate(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500"
+              value={selectedKey}
+              onChange={(e) => setSelectedKey(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-teal-500"
             >
-              <option value="welcome_lead">Welcome & Intro Template (New Lead)</option>
-              <option value="followup_reminder_patient">7-Day Follow-Up Reminder to Patient</option>
-              <option value="rto_address_reconfirm">RTO Delivery Address Re-confirmation</option>
-              <option value="custom_caller_nudge">Call Attempt Notification</option>
+              {INITIAL_WHATSAPP_TEMPLATES.map((tmpl) => (
+                <option key={tmpl.key} value={tmpl.key}>
+                  {tmpl.label} ({tmpl.key})
+                </option>
+              ))}
             </select>
           </div>
 
+          {/* Rendered Live Message Preview */}
           <div>
-            <label className="block text-xs font-medium text-slate-300 mb-1">Template Preview</label>
-            <div className="bg-slate-950 border border-slate-800 rounded-lg p-3 text-xs text-slate-300 font-mono space-y-1">
-              {template === 'welcome_lead' && (
-                <p>Hello {lead.name}, thank you for reaching out to Hommed Diagnostics! Our medical advisor will connect with you shortly for your health checkup inquiry.</p>
-              )}
-              {template === 'followup_reminder_patient' && (
-                <p>Hi {lead.name}, following up on your requested health package with Hommed! Would you like to schedule your sample collection slot today?</p>
-              )}
-              {template === 'rto_address_reconfirm' && (
-                <p>Dear {lead.name}, your report/sample kit was returned due to address mismatch. Please reply with your updated pincode and address to re-ship immediately.</p>
-              )}
-              {template === 'custom_caller_nudge' && (
-                <p>Hi {lead.name}, we tried calling you regarding your Hommed Health Inquiry. Please reply with a preferred call back time!</p>
-              )}
+            <label className="block text-xs font-semibold text-slate-300 mb-1">Message Preview</label>
+            <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-slate-200 font-mono whitespace-pre-wrap leading-relaxed shadow-inner">
+              {renderedMessage}
             </div>
           </div>
 
-          {statusMsg && (
-            <div className={`p-3 rounded-lg flex items-center space-x-2 text-xs font-medium ${
-              statusMsg.type === 'success' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-            }`}>
-              {statusMsg.type === 'success' ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
-              <span>{statusMsg.text}</span>
+          {/* Self-Reported Notice */}
+          <div className="p-3 bg-slate-950 border border-slate-800/80 rounded-xl text-[11px] text-slate-400 flex items-start space-x-2">
+            <Info className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+            <span>
+              <strong>Self-Reported Logging:</strong> Opens WhatsApp Business with pre-filled text. Clicking records a manual action in lead timeline.
+            </span>
+          </div>
+
+          {copiedNotice && (
+            <div className="p-2 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-xl text-xs font-semibold flex items-center space-x-2 animate-in fade-in">
+              <CheckCircle2 className="w-4 h-4" />
+              <span>Opening wa.me chat & logged manual action!</span>
             </div>
           )}
 
@@ -126,20 +129,21 @@ export default function WhatsAppModal({ isOpen, onClose, lead }: WhatsAppModalPr
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium rounded-lg transition"
+              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-xl transition"
             >
-              Close
+              Cancel
             </button>
             <button
-              type="submit"
-              disabled={sending}
-              className="inline-flex items-center space-x-1.5 px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-sm font-semibold rounded-lg transition shadow"
+              type="button"
+              onClick={handleOpenWhatsApp}
+              className="inline-flex items-center space-x-2 px-5 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-extrabold rounded-xl transition shadow-lg hover:scale-[1.02] active:scale-95"
             >
-              <Send className="w-4 h-4" />
-              <span>{sending ? 'Sending...' : 'Send WhatsApp Message'}</span>
+              <ExternalLink className="w-4 h-4" />
+              <span>Open in WhatsApp Business</span>
             </button>
           </div>
-        </form>
+
+        </div>
 
       </div>
     </div>

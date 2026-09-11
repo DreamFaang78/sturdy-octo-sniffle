@@ -96,18 +96,39 @@ CREATE TABLE IF NOT EXISTS public.status_history (
     changed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 6. WHATSAPP LOGS (AISENSY)
+-- 6. WHATSAPP TEMPLATES & MANUAL LOGS
+CREATE TABLE IF NOT EXISTS public.whatsapp_templates (
+    key TEXT PRIMARY KEY,
+    label TEXT NOT NULL,
+    text_template TEXT NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Seed Default WhatsApp Templates
+INSERT INTO public.whatsapp_templates (key, label, text_template) VALUES
+    ('order_confirmation', 'Order Confirmation', 'Hello {{name}}, your order with Hommed Diagnostics has been confirmed! Thank you for choosing us.'),
+    ('diet_chart_reminder', 'Diet Chart Protocol', 'Hello {{name}}, here is your personalized Hommed diet chart. Please review the guidelines for your care plan.'),
+    ('dispatch_notice', 'Order Dispatch Notification', 'Hi {{name}}, your order has been dispatched and is on its way! Our team will keep you updated.'),
+    ('followup_day1', 'Day 1 Nudge', 'Hi {{name}}, following up regarding your health checkup inquiry with Hommed Diagnostics. When is a good time to connect?'),
+    ('followup_day3', 'Day 3 Nudge', 'Hello {{name}}, just checking in on your requested health package with Hommed. Let us know if you have any questions!'),
+    ('followup_day5', 'Day 5 Nudge', 'Hi {{name}}, we have special health slots available today! Would you like to schedule your diagnostic package?'),
+    ('followup_day7', 'Day 7 Final Nudge', 'Hello {{name}}, final check-in regarding your Hommed health checkup inquiry. Let us know if you would like to schedule.'),
+    ('daily_revert', 'Daily Revert Nudge', 'Hi {{name}}, following up on our previous call. Please reply or let us know when you would like to reconnect!')
+ON CONFLICT (key) DO UPDATE SET
+    label = EXCLUDED.label,
+    text_template = EXCLUDED.text_template,
+    updated_at = NOW();
+
 CREATE TABLE IF NOT EXISTS public.whatsapp_log (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     lead_id UUID REFERENCES public.leads(id) ON DELETE SET NULL,
     phone TEXT NOT NULL,
-    template_name TEXT NOT NULL,
-    payload JSONB DEFAULT '{}'::jsonb,
-    status TEXT NOT NULL DEFAULT 'sent', -- 'sent', 'failed'
-    response_data JSONB DEFAULT '{}'::jsonb,
-    error_message TEXT,
+    template_key TEXT NOT NULL,
+    sender_name TEXT NOT NULL DEFAULT 'System',
+    status TEXT NOT NULL DEFAULT 'sent_manual', -- 'sent_manual'
     sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
 
 -- 7. SYSTEM SETTINGS
 CREATE TABLE IF NOT EXISTS public.settings (

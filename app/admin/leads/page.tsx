@@ -15,10 +15,12 @@ import {
   PhoneCall, 
   Filter,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Trash2,
+  RefreshCw
 } from 'lucide-react';
 import { Lead, Profile } from '@/lib/types';
-import { INITIAL_LEADS, INITIAL_PROFILES } from '@/lib/mockDb';
+import { INITIAL_PROFILES } from '@/lib/mockDb';
 import { distributeLeadsEvenly } from '@/lib/assignment';
 import { createClient } from '@/lib/supabase/client';
 
@@ -35,7 +37,8 @@ async function fetchLeadsFromApi(): Promise<Lead[]> {
 
 export default function AdminLeadsPage() {
   const [currentUser, setCurrentUser] = useState<Profile>(INITIAL_PROFILES[0]);
-  const [leads, setLeads] = useState<Lead[]>(INITIAL_LEADS);
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [callers, setCallers] = useState<Profile[]>(INITIAL_PROFILES.filter((p) => p.role === 'caller'));
   const [selectedStatusTab, setSelectedStatusTab] = useState<string>('all');
   const [selectedCallerFilter, setSelectedCallerFilter] = useState<string>('all');
@@ -58,26 +61,29 @@ export default function AdminLeadsPage() {
     }
   }, []);
 
+  const loadLeads = async () => {
+    setIsLoading(true);
+    const data = await fetchLeadsFromApi();
+    setLeads(data);
+    setIsLoading(false);
+  };
+
   // Fetch real leads from Supabase (via server API) + subscribe to new inserts
   useEffect(() => {
     const supabase = createClient();
 
-    const loadLeads = async () => {
-      const data = await fetchLeadsFromApi();
-      if (data.length > 0) {
-        setLeads(data);
-      }
-    };
-
     loadLeads();
 
-    // Real-time: new lead inserted → refresh list
+    // Real-time: new lead inserted or updated → refresh list
     const channel = supabase
       .channel('leads-realtime')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'leads' }, () => {
         loadLeads();
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'leads' }, () => {
+        loadLeads();
+      })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'leads' }, () => {
         loadLeads();
       })
       .subscribe();
@@ -88,6 +94,54 @@ export default function AdminLeadsPage() {
   const showToast = (msg: string) => {
     setToastMsg(msg);
     setTimeout(() => setToastMsg(null), 3000);
+  };
+
+  // Delete single lead
+  const handleDeleteLead = async (leadId: string, leadName: string) => {
+    if (!confirm(`Are you sure you want to delete lead "${leadName}"?`)) return;
+    try {
+      const res = await fetch(`/api/leads?id=${leadId}`, { method: 'DELETE' });
+      if (res.ok) {
+        setLeads((prev) => prev.filter((l) => l.id !== leadId));
+        showToast(`Lead "${leadName}" deleted successfully.`);
+      } else {
+        showToast('Failed to delete lead.');
+      }
+    } catch {
+      showToast('Error deleting lead.');
+    }
+  };
+
+  // Purge all dummy & demo placeholder leads
+  const handlePurgeDummyLeads = async () => {
+    if (!confirm('Delete all dummy / placeholder test leads? Real leads with valid names will be kept.')) return;
+    try {
+      const res = await fetch('/api/leads?dummy=true', { method: 'DELETE' });
+      if (res.ok) {
+        await loadLeads();
+        showToast('All placeholder / dummy leads purged successfully.');
+      } else {
+        showToast('Failed to purge dummy leads.');
+      }
+    } catch {
+      showToast('Error purging dummy leads.');
+    }
+  };
+
+  // Clear all leads (full reset)
+  const handleClearAllLeads = async () => {
+    if (!confirm('⚠️ WARNING: This will permanently delete ALL leads in the database. Are you sure?')) return;
+    try {
+      const res = await fetch('/api/leads?all=true', { method: 'DELETE' });
+      if (res.ok) {
+        setLeads([]);
+        showToast('All leads have been permanently cleared.');
+      } else {
+        showToast('Failed to clear leads.');
+      }
+    } catch {
+      showToast('Error clearing leads.');
+    }
   };
 
   const unassignedLeads = leads.filter((l) => l.status === 'unassigned');
@@ -185,7 +239,25 @@ export default function AdminLeadsPage() {
             <p className="text-sm text-slate-400 mt-1">Assign leads to callers, monitor status, and manage incoming Facebook Ads leads.</p>
           </div>
 
-          <div className="mt-4 md:mt-0 flex items-center space-x-3">
+          <div className="mt-4 md:mt-0 flex flex-wrap items-center gap-2.5">
+            <button
+              onClick={handlePurgeDummyLeads}
+              className="inline-flex items-center space-x-1.5 px-3 py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 text-xs font-semibold rounded-xl border border-amber-500/30 transition"
+              title="Delete all placeholder and dummy leads"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Purge Dummy Leads</span>
+            </button>
+
+            <button
+              onClick={handleClearAllLeads}
+              className="inline-flex items-center space-x-1.5 px-3 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 text-xs font-semibold rounded-xl border border-rose-500/30 transition"
+              title="Delete all leads from database"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Clear All Leads</span>
+            </button>
+
             <button
               onClick={() => setIsManualLeadOpen(true)}
               className="inline-flex items-center space-x-1.5 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-xl border border-slate-700 transition"
@@ -288,72 +360,97 @@ export default function AdminLeadsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
-                {filteredLeads.map((lead) => {
-                  const assignedCaller = callers.find((c) => c.id === lead.assigned_to);
-
-                  return (
-                    <tr key={lead.id} className="hover:bg-slate-800/40 transition">
-                      
-                      <td className="py-3.5 px-4">
-                        <div className="font-semibold text-white text-sm">{lead.name}</div>
-                        <div className="text-slate-400 font-mono text-xs">{lead.phone}</div>
-                      </td>
-
-                      <td className="py-3.5 px-4">
-                        <div className="font-medium text-slate-200 truncate max-w-[180px]">
-                          {lead.campaign || 'Direct Lead'}
+                {filteredLeads.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="py-12 text-center text-slate-500">
+                      {isLoading ? (
+                        <div className="flex items-center justify-center space-x-2 text-slate-400">
+                          <RefreshCw className="w-4 h-4 animate-spin text-teal-400" />
+                          <span>Loading leads from Supabase...</span>
                         </div>
-                        <div className="text-[10px] text-slate-500">{lead.source}</div>
-                      </td>
+                      ) : (
+                        <div className="space-y-1">
+                          <div className="text-slate-400 font-semibold text-sm">No leads in queue</div>
+                          <div className="text-xs text-slate-500">Incoming Facebook Lead Ads will appear here in real-time.</div>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ) : (
+                  filteredLeads.map((lead) => {
+                    const assignedCaller = callers.find((c) => c.id === lead.assigned_to);
 
-                      <td className="py-3.5 px-4">
-                        {getStatusBadge(lead.status)}
-                        {lead.order_status === 'rto' && (
-                          <span className="ml-1 px-1.5 py-0.5 bg-rose-500/30 text-rose-300 text-[10px] font-bold rounded">
-                            RTO
-                          </span>
-                        )}
-                      </td>
+                    return (
+                      <tr key={lead.id} className="hover:bg-slate-800/40 transition">
+                        
+                        <td className="py-3.5 px-4">
+                          <div className="font-semibold text-white text-sm">{lead.name}</div>
+                          <div className="text-slate-400 font-mono text-xs">{lead.phone}</div>
+                        </td>
 
-                      <td className="py-3.5 px-4">
-                        <select
-                          value={lead.assigned_to || ''}
-                          onChange={(e) => handleReassignLead(lead.id, e.target.value)}
-                          className="bg-slate-950 border border-slate-800 rounded px-2.5 py-1 text-xs text-slate-200 focus:outline-none focus:border-teal-500"
-                        >
-                          <option value="">Unassigned</option>
-                          {callers.map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.name}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
+                        <td className="py-3.5 px-4">
+                          <div className="font-medium text-slate-200 truncate max-w-[180px]">
+                            {lead.campaign || 'Direct Lead'}
+                          </div>
+                          <div className="text-[10px] text-slate-500">{lead.source}</div>
+                        </td>
 
-                      <td className="py-3.5 px-4 font-mono text-slate-400">
-                        {lead.next_follow_up_date || '—'}
-                      </td>
+                        <td className="py-3.5 px-4">
+                          {getStatusBadge(lead.status)}
+                          {lead.order_status === 'rto' && (
+                            <span className="ml-1 px-1.5 py-0.5 bg-rose-500/30 text-rose-300 text-[10px] font-bold rounded">
+                              RTO
+                            </span>
+                          )}
+                        </td>
 
-                      <td className="py-3.5 px-4 text-right space-x-2">
-                        <button
-                          onClick={() => setWhatsappLead(lead)}
-                          className="p-1.5 bg-slate-800 hover:bg-emerald-500/20 text-slate-300 hover:text-emerald-400 rounded-lg transition"
-                          title="Send WhatsApp"
-                        >
-                          <MessageSquare className="w-4 h-4" />
-                        </button>
-                        <Link
-                          href={`/caller/leads/${lead.id}`}
-                          className="inline-flex items-center space-x-1 px-3 py-1.5 bg-teal-500/10 hover:bg-teal-500 text-teal-400 hover:text-slate-950 text-xs font-semibold rounded-lg transition border border-teal-500/20"
-                        >
-                          <span>Open</span>
-                          <ChevronRight className="w-3.5 h-3.5" />
-                        </Link>
-                      </td>
+                        <td className="py-3.5 px-4">
+                          <select
+                            value={lead.assigned_to || ''}
+                            onChange={(e) => handleReassignLead(lead.id, e.target.value)}
+                            className="bg-slate-950 border border-slate-800 rounded px-2.5 py-1 text-xs text-slate-200 focus:outline-none focus:border-teal-500"
+                          >
+                            <option value="">Unassigned</option>
+                            {callers.map((c) => (
+                              <option key={c.id} value={c.id}>
+                                {c.name}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
 
-                    </tr>
-                  );
-                })}
+                        <td className="py-3.5 px-4 font-mono text-slate-400">
+                          {lead.next_follow_up_date || '—'}
+                        </td>
+
+                        <td className="py-3.5 px-4 text-right space-x-1.5">
+                          <button
+                            onClick={() => setWhatsappLead(lead)}
+                            className="p-1.5 bg-slate-800 hover:bg-emerald-500/20 text-slate-300 hover:text-emerald-400 rounded-lg transition"
+                            title="Send WhatsApp"
+                          >
+                            <MessageSquare className="w-4 h-4" />
+                          </button>
+                          <Link
+                            href={`/caller/leads/${lead.id}`}
+                            className="inline-flex items-center space-x-1 px-2.5 py-1.5 bg-teal-500/10 hover:bg-teal-500 text-teal-400 hover:text-slate-950 text-xs font-semibold rounded-lg transition border border-teal-500/20"
+                          >
+                            <span>Open</span>
+                            <ChevronRight className="w-3.5 h-3.5" />
+                          </Link>
+                          <button
+                            onClick={() => handleDeleteLead(lead.id, lead.name)}
+                            className="p-1.5 bg-slate-800 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 rounded-lg transition"
+                            title="Delete Lead"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </td>
+
+                      </tr>
+                    );
+                  })
+                )}
               </tbody>
             </table>
           </div>

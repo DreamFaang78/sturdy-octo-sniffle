@@ -20,6 +20,7 @@ import {
 import { Lead, Profile } from '@/lib/types';
 import { INITIAL_LEADS, INITIAL_PROFILES } from '@/lib/mockDb';
 import { distributeLeadsEvenly } from '@/lib/assignment';
+import { createClient } from '@/lib/supabase/client';
 
 export default function AdminLeadsPage() {
   const [currentUser, setCurrentUser] = useState<Profile>(INITIAL_PROFILES[0]);
@@ -44,6 +45,37 @@ export default function AdminLeadsPage() {
         } catch (e) {}
       }
     }
+  }, []);
+
+  // Fetch real leads from Supabase + subscribe to new inserts
+  useEffect(() => {
+    const supabase = createClient();
+
+    const fetchLeads = async () => {
+      const { data, error } = await supabase
+        .from('leads')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (!error && data && data.length > 0) {
+        setLeads(data as Lead[]);
+      }
+    };
+
+    fetchLeads();
+
+    // Real-time: new lead inserted → refresh list
+    const channel = supabase
+      .channel('leads-realtime')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'leads' }, () => {
+        fetchLeads();
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'leads' }, () => {
+        fetchLeads();
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
   }, []);
 
   const showToast = (msg: string) => {

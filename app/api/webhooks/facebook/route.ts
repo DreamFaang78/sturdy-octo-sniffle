@@ -105,26 +105,42 @@ export async function POST(req: NextRequest) {
         formAnswers = value.form_answers || { 'Leadgen ID': leadgenId, 'Page ID': pageId };
       }
 
-      // 2. Handle Graph API Error Failure Log
+      // 2. Handle Graph API Error — create partial lead instead of dropping it
       if (graphApiFailed) {
-        const logData = {
+        console.warn('[Meta Webhook] Graph API failed — creating partial lead from webhook payload.');
+
+        const errLogData = {
           meta_lead_id: leadgenId,
-          name: name || 'Unknown',
-          phone: phone || null,
+          name: 'Facebook Lead (pending enrichment)',
+          phone: null,
           campaign,
           status: 'api_error',
-          error_detail: `Graph API call failed after retries: ${apiErrorMessage}`,
+          error_detail: `Graph API call failed after retries: ${apiErrorMessage}. Lead captured as partial — needs manual enrichment.`,
           raw_payload: body,
           created_at: new Date().toISOString(),
         };
+        await supabase.from('lead_ingestion_log').insert(errLogData);
+        INITIAL_INGESTION_LOGS.unshift({ id: `ingest-${Date.now()}`, ...errLogData, status: 'api_error' });
 
-        await supabase.from('lead_ingestion_log').insert(logData);
-        INITIAL_INGESTION_LOGS.unshift({ id: `ingest-${Date.now()}`, ...logData, status: 'api_error' });
+        // Still create a partial lead so it is not lost
+        const partialLead = {
+          name: `Facebook Lead — ${leadgenId}`,
+          phone: null,
+          source: 'Facebook Lead Ads',
+          campaign,
+          form_answers: { 'Leadgen ID': leadgenId, 'Page ID': pageId, 'Form ID': formId, note: 'Graph API enrichment failed — token may be expired' },
+          status: 'unassigned',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+        await supabase.from('leads').insert(partialLead);
 
-        return NextResponse.json(
-          { success: false, error: 'Meta Graph API call failed', meta_lead_id: leadgenId },
-          { status: 502 }
-        );
+        return NextResponse.json({
+          success: true,
+          status: 'partial_lead_created',
+          message: 'Lead captured without enrichment — Graph API token may be expired',
+          meta_lead_id: leadgenId,
+        });
       }
 
       // 3. Handle Mapping Error if Phone is missing

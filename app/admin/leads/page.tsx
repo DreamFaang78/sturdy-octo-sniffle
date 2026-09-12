@@ -5,6 +5,7 @@ import Link from 'next/link';
 import Navbar from '@/components/Navbar';
 import ManualLeadModal from '@/components/ManualLeadModal';
 import WhatsAppModal from '@/components/WhatsAppModal';
+import ImportCsvModal from '@/components/ImportCsvModal';
 import { 
   Users, 
   Search, 
@@ -17,7 +18,8 @@ import {
   CheckCircle2,
   AlertCircle,
   Trash2,
-  RefreshCw
+  RefreshCw,
+  UploadCloud
 } from 'lucide-react';
 import { Lead, Profile } from '@/lib/types';
 import { INITIAL_PROFILES } from '@/lib/mockDb';
@@ -44,6 +46,7 @@ export default function AdminLeadsPage() {
   const [selectedCallerFilter, setSelectedCallerFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [isManualLeadOpen, setIsManualLeadOpen] = useState(false);
+  const [isCsvModalOpen, setIsCsvModalOpen] = useState(false);
   const [whatsappLead, setWhatsappLead] = useState<Lead | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
@@ -273,13 +276,22 @@ export default function AdminLeadsPage() {
 
           <div className="mt-4 md:mt-0 flex flex-wrap items-center gap-2.5">
             <button
+              onClick={() => setIsCsvModalOpen(true)}
+              className="inline-flex items-center space-x-1.5 px-3.5 py-2 bg-teal-500 hover:bg-teal-400 text-slate-950 text-xs font-bold rounded-xl shadow-lg transition"
+              title="Upload exported CSV of past leads from Facebook Ads Manager"
+            >
+              <UploadCloud className="w-3.5 h-3.5" />
+              <span>Import Facebook CSV</span>
+            </button>
+
+            <button
               onClick={() => handleSyncFacebookLeads()}
               disabled={isSyncing}
               className="inline-flex items-center space-x-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-lg transition"
               title="Fetch and import all Facebook Lead Ad submissions from yesterday 6:00 PM to present"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-              <span>{isSyncing ? 'Syncing...' : 'Sync from FB (Yesterday 6 PM - Now)'}</span>
+              <span>{isSyncing ? 'Syncing...' : 'Sync from FB API'}</span>
             </button>
 
             <button
@@ -512,6 +524,13 @@ export default function AdminLeadsPage() {
         isOpen={!!whatsappLead}
         onClose={() => setWhatsappLead(null)}
         lead={whatsappLead}
+      />
+
+      {/* Facebook Leads CSV Import Modal */}
+      <ImportCsvModal
+        isOpen={isCsvModalOpen}
+        onClose={() => setIsCsvModalOpen(false)}
+        onLeadsImported={loadLeads}
       />
     </div>
   );

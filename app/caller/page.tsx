@@ -31,6 +31,18 @@ import {
   getFollowUpUrgency 
 } from '@/lib/notifications';
 import { openWhatsAppAndLogAction } from '@/lib/whatsapp';
+import { createClient } from '@/lib/supabase/client';
+
+async function fetchLeadsFromApi(): Promise<Lead[]> {
+  try {
+    const res = await fetch('/api/leads', { cache: 'no-store' });
+    if (!res.ok) return [];
+    const json = await res.json();
+    return json.leads || [];
+  } catch {
+    return [];
+  }
+}
 
 export default function CallerDashboard() {
 
@@ -41,6 +53,32 @@ export default function CallerDashboard() {
   const [whatsappLead, setWhatsappLead] = useState<Lead | null>(null);
   const [isManualLeadOpen, setIsManualLeadOpen] = useState(false);
   const [notificationsAllowed, setNotificationsAllowed] = useState(false);
+
+  // Fetch real leads from API and subscribe to realtime updates
+  useEffect(() => {
+    const supabase = createClient();
+
+    const loadLeads = async () => {
+      const data = await fetchLeadsFromApi();
+      if (data.length > 0) {
+        setLeads(data);
+      }
+    };
+
+    loadLeads();
+
+    const channel = supabase
+      .channel('caller-dashboard-leads-realtime')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'leads' }, () => {
+        loadLeads();
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'leads' }, () => {
+        loadLeads();
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, []);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {

@@ -122,23 +122,26 @@ export async function POST(req: NextRequest) {
         await supabase.from('lead_ingestion_log').insert(errLogData);
         INITIAL_INGESTION_LOGS.unshift({ id: `ingest-${Date.now()}`, ...errLogData, status: 'api_error' });
 
-        // Still create a partial lead so it is not lost
+        // Still create a partial lead so it is not lost (provide fallback phone for NOT NULL column)
         const partialLead = {
           name: `Facebook Lead — ${leadgenId}`,
-          phone: null,
+          phone: '+910000000000',
           source: 'Facebook Lead Ads',
           campaign,
-          form_answers: { 'Leadgen ID': leadgenId, 'Page ID': pageId, 'Form ID': formId, note: 'Graph API enrichment failed — token may be expired' },
+          form_answers: { 'Leadgen ID': leadgenId, 'Page ID': pageId, 'Form ID': formId, note: 'Graph API enrichment failed or mock test ID — token may be expired or dummy lead ID' },
           status: 'unassigned',
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         };
-        await supabase.from('leads').insert(partialLead);
+        const { error: insErr } = await supabase.from('leads').insert(partialLead);
+        if (insErr) {
+          console.error('[Supabase Partial Lead Insert Error]:', insErr);
+        }
 
         return NextResponse.json({
           success: true,
           status: 'partial_lead_created',
-          message: 'Lead captured without enrichment — Graph API token may be expired',
+          message: 'Lead captured without enrichment — Graph API token may be expired or test ID',
           meta_lead_id: leadgenId,
         });
       }

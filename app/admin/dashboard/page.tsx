@@ -21,6 +21,18 @@ import {
 import { Lead, Profile, CallerPerformance } from '@/lib/types';
 import { INITIAL_LEADS, INITIAL_PROFILES } from '@/lib/mockDb';
 import { distributeLeadsEvenly } from '@/lib/assignment';
+import { createClient } from '@/lib/supabase/client';
+
+async function fetchLeadsFromApi(): Promise<Lead[]> {
+  try {
+    const res = await fetch('/api/leads', { cache: 'no-store' });
+    if (!res.ok) return [];
+    const json = await res.json();
+    return json.leads || [];
+  } catch {
+    return [];
+  }
+}
 
 export default function AdminDashboardPage() {
   const [currentUser, setCurrentUser] = useState<Profile>(INITIAL_PROFILES[0]); // Default Agam Singh
@@ -41,6 +53,32 @@ export default function AdminDashboardPage() {
         } catch (e) {}
       }
     }
+  }, []);
+
+  // Fetch real leads from API and subscribe to realtime updates
+  useEffect(() => {
+    const supabase = createClient();
+
+    const loadLeads = async () => {
+      const data = await fetchLeadsFromApi();
+      if (data.length > 0) {
+        setLeads(data);
+      }
+    };
+
+    loadLeads();
+
+    const channel = supabase
+      .channel('admin-dashboard-leads-realtime')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'leads' }, () => {
+        loadLeads();
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'leads' }, () => {
+        loadLeads();
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
   }, []);
 
   const todayStr = new Date().toISOString().split('T')[0];

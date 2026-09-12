@@ -106,24 +106,40 @@ export default function CallerDashboard() {
 
   const todayStr = new Date().toISOString().split('T')[0];
 
-  // Leads assigned to this caller
-  const myLeads = leads.filter((l) => l.assigned_to === currentUser.id);
+  const [viewScope, setViewScope] = useState<'my' | 'all'>('my');
+
+  const isLeadAssignedToMe = (l: Lead) => {
+    if (!l.assigned_to) return false;
+    const assignedStr = String(l.assigned_to).toLowerCase();
+    const currentName = currentUser.name.toLowerCase();
+    const currentId = currentUser.id.toLowerCase();
+
+    return (
+      assignedStr === currentId ||
+      assignedStr === currentName ||
+      (currentName.includes('priya') && (assignedStr.includes('1') || assignedStr.includes('priya'))) ||
+      (currentName.includes('rahul') && (assignedStr.includes('2') || assignedStr.includes('rahul'))) ||
+      (currentName.includes('sneha') && (assignedStr.includes('3') || assignedStr.includes('sneha')))
+    );
+  };
+
+  // Leads assigned to this caller (or all leads if viewScope === 'all')
+  const myLeads = leads.filter((l) => isLeadAssignedToMe(l));
+  const activeLeadPool = viewScope === 'my' ? myLeads : leads;
 
   // Today's Follow-ups Panel (due today or overdue, plus post-dispatch check-ins)
-  const todaysFollowups = myLeads.filter((l) => {
+  const todaysFollowups = activeLeadPool.filter((l) => {
     if (!l.next_follow_up_date || l.next_follow_up_date > todayStr) return false;
     if (l.status === 'useless') return false;
     if (l.status === 'converted') {
-      // Check if there is a pending post-dispatch call task in care journey
       const journey = INITIAL_CARE_JOURNEYS.find((j) => j.lead_id === l.id);
       return journey?.step3_call_task_status === 'pending';
     }
     return true;
   });
 
-
   // Filtered Leads according to active tab & search query
-  const filteredLeads = myLeads.filter((l) => {
+  const filteredLeads = activeLeadPool.filter((l) => {
     const matchesTab = selectedTab === 'all' ? true : l.status === selectedTab;
     const matchesSearch =
       l.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -262,20 +278,45 @@ export default function CallerDashboard() {
           
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4">
             
-            <div className="flex items-center space-x-1 overflow-x-auto pb-2 sm:pb-0 scrollbar-none">
-              {(['all', 'qualified', 'phone_not_picked', 'converted', 'useless'] as const).map((tab) => (
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center space-x-1 bg-slate-900 p-1 rounded-xl border border-slate-800">
                 <button
-                  key={tab}
-                  onClick={() => setSelectedTab(tab)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wider transition whitespace-nowrap ${
-                    selectedTab === tab
+                  onClick={() => setViewScope('my')}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
+                    viewScope === 'my'
                       ? 'bg-teal-500 text-slate-950 shadow'
-                      : 'bg-slate-900 text-slate-400 hover:text-white hover:bg-slate-800'
+                      : 'text-slate-400 hover:text-white'
                   }`}
                 >
-                  {tab === 'all' ? `All (${myLeads.length})` : `${tab.replace(/_/g, ' ')} (${myLeads.filter(l => l.status === tab).length})`}
+                  My Assigned ({myLeads.length})
                 </button>
-              ))}
+                <button
+                  onClick={() => setViewScope('all')}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
+                    viewScope === 'all'
+                      ? 'bg-teal-500 text-slate-950 shadow'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  All Leads ({leads.length})
+                </button>
+              </div>
+
+              <div className="flex items-center space-x-1 overflow-x-auto pb-2 sm:pb-0 scrollbar-none">
+                {(['all', 'unassigned', 'qualified', 'phone_not_picked', 'converted', 'useless'] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    onClick={() => setSelectedTab(tab as any)}
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wider transition whitespace-nowrap ${
+                      selectedTab === tab
+                        ? 'bg-slate-800 text-teal-400 border border-teal-500/30 shadow'
+                        : 'bg-slate-900/60 text-slate-400 hover:text-white hover:bg-slate-800'
+                    }`}
+                  >
+                    {tab === 'all' ? `All (${activeLeadPool.length})` : `${tab.replace(/_/g, ' ')} (${activeLeadPool.filter(l => l.status === tab).length})`}
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div className="relative max-w-xs w-full">

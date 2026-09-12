@@ -223,6 +223,7 @@ export default function AdminLeadsPage() {
           assigned_to: callerId || null,
           assigned_at: callerId ? new Date().toISOString() : null,
           assignee: caller || null,
+          status: (callerId ? 'qualified' : 'unassigned') as any,
           updated_at: new Date().toISOString(),
         };
       }

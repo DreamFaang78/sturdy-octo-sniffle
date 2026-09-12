@@ -181,8 +181,8 @@ export default function AdminLeadsPage() {
 
   const unassignedLeads = leads.filter((l) => l.status === 'unassigned');
 
-  // Distribute Evenly (Round Robin)
-  const handleDistributeEvenly = () => {
+  // Distribute Evenly (Round Robin) with Supabase persistence
+  const handleDistributeEvenly = async () => {
     if (unassignedLeads.length === 0) {
       showToast('No unassigned leads found in queue.');
       return;
@@ -191,13 +191,30 @@ export default function AdminLeadsPage() {
     const { updatedLeads } = distributeLeadsEvenly(unassignedLeads, callers);
     const updatedMap = new Map(updatedLeads.map((l) => [l.id, l]));
     const nextLeads = leads.map((l) => updatedMap.get(l.id) || l);
-
     setLeads(nextLeads);
-    showToast(`Distributed ${unassignedLeads.length} leads across ${callers.length} active callers!`);
+
+    try {
+      const updates = updatedLeads.map((l) => ({
+        id: l.id,
+        assigned_to: l.assigned_to,
+        assigned_at: l.assigned_at,
+        status: 'qualified',
+      }));
+
+      await fetch('/api/leads', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ updates }),
+      });
+
+      showToast(`Distributed ${unassignedLeads.length} leads across ${callers.length} active callers!`);
+    } catch {
+      showToast('Distributed locally (error syncing to database).');
+    }
   };
 
-  // Reassign single lead
-  const handleReassignLead = (leadId: string, callerId: string) => {
+  // Reassign single lead with Supabase persistence
+  const handleReassignLead = async (leadId: string, callerId: string) => {
     const caller = callers.find((c) => c.id === callerId);
     const updated = leads.map((l) => {
       if (l.id === leadId) {
@@ -213,7 +230,22 @@ export default function AdminLeadsPage() {
     });
 
     setLeads(updated);
-    showToast(`Lead reassigned to ${caller ? caller.name : 'Unassigned'}`);
+
+    try {
+      await fetch('/api/leads', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: leadId,
+          assigned_to: callerId || null,
+          status: callerId ? 'qualified' : 'unassigned',
+        }),
+      });
+
+      showToast(`Lead reassigned to ${caller ? caller.name : 'Unassigned'}`);
+    } catch {
+      showToast('Reassigned locally (error saving to database).');
+    }
   };
 
   const handleLeadAdded = (newLead: Lead) => {

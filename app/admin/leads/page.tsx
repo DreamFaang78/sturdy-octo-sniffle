@@ -273,7 +273,7 @@ export default function AdminLeadsPage() {
 
           <div className="mt-4 md:mt-0 flex flex-wrap items-center gap-2.5">
             <button
-              onClick={handleSyncFacebookLeads}
+              onClick={() => handleSyncFacebookLeads()}
               disabled={isSyncing}
               className="inline-flex items-center space-x-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-lg transition"
               title="Fetch and import all Facebook Lead Ad submissions from yesterday 6:00 PM to present"

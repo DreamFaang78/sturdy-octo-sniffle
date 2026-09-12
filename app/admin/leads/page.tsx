@@ -144,6 +144,28 @@ export default function AdminLeadsPage() {
     }
   };
 
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  // Sync leads from Facebook Graph API (Yesterday 6 PM to Present)
+  const handleSyncFacebookLeads = async () => {
+    setIsSyncing(true);
+    showToast('Connecting to Facebook Graph API & fetching leads since yesterday 6:00 PM...');
+    try {
+      const res = await fetch('/api/leads/sync-facebook', { method: 'POST' });
+      const json = await res.json();
+      if (res.ok) {
+        await loadLeads();
+        showToast(json.message || 'Successfully synced leads from Facebook!');
+      } else {
+        showToast(`Sync notice: ${json.error || 'Failed to sync from Facebook'}`);
+      }
+    } catch (e) {
+      showToast('Network error while syncing leads from Facebook.');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   const unassignedLeads = leads.filter((l) => l.status === 'unassigned');
 
   // Distribute Evenly (Round Robin)
@@ -240,6 +262,16 @@ export default function AdminLeadsPage() {
           </div>
 
           <div className="mt-4 md:mt-0 flex flex-wrap items-center gap-2.5">
+            <button
+              onClick={handleSyncFacebookLeads}
+              disabled={isSyncing}
+              className="inline-flex items-center space-x-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-lg transition"
+              title="Fetch and import all Facebook Lead Ad submissions from yesterday 6:00 PM to present"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+              <span>{isSyncing ? 'Syncing...' : 'Sync from FB (Yesterday 6 PM - Now)'}</span>
+            </button>
+
             <button
               onClick={handlePurgeDummyLeads}
               className="inline-flex items-center space-x-1.5 px-3 py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 text-xs font-semibold rounded-xl border border-amber-500/30 transition"

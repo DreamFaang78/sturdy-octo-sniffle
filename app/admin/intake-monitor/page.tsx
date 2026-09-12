@@ -85,8 +85,8 @@ export default function LeadIntakeMonitorPage() {
     }, 600);
   };
 
-  // Simulate Incoming Webhook Lead for Live Testing
-  const handleSimulateWebhook = () => {
+  // Fire Real Webhook Payload to /api/webhooks/facebook to test full end-to-end pipeline
+  const handleSimulateWebhook = async () => {
     setIsSimulating(true);
 
     const mockNames = ['Rahul Mehta', 'Simran Kaur', 'Amitabh Roy', 'Dr. Sunita Rao', 'Devansh Gupta'];
@@ -94,10 +94,50 @@ export default function LeadIntakeMonitorPage() {
     const randomName = mockNames[Math.floor(Math.random() * mockNames.length)];
     const randomCampaign = mockCampaigns[Math.floor(Math.random() * mockCampaigns.length)];
     const randomPhone = `+9198${Math.floor(10000000 + Math.random() * 90000000)}`;
+    const randomLeadgenId = `leadgen_${Math.floor(100000000 + Math.random() * 900000000)}`;
+
+    const payload = {
+      object: 'page',
+      entry: [
+        {
+          id: '61590905900938',
+          time: Math.floor(Date.now() / 1000),
+          changes: [
+            {
+              field: 'leadgen',
+              value: {
+                leadgen_id: randomLeadgenId,
+                page_id: '61590905900938',
+                form_id: '1234567890',
+                created_name: randomName,
+                phone_number: randomPhone,
+                form_answers: {
+                  'Full Name': randomName,
+                  'Phone Number': randomPhone,
+                  'Campaign': randomCampaign,
+                },
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    try {
+      const res = await fetch('/api/webhooks/facebook', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const result = await res.json();
+      console.log('[Test Webhook Ingestion Result]:', result);
+    } catch (e) {
+      console.error('[Test Webhook Ingestion Error]:', e);
+    }
 
     const testLog: LeadIngestionLog = {
       id: `ingest-sim-${Date.now()}`,
-      meta_lead_id: `leadgen_${Math.floor(10000000 + Math.random() * 90000000)}`,
+      meta_lead_id: randomLeadgenId,
       name: randomName,
       phone: randomPhone,
       campaign: randomCampaign,
@@ -105,11 +145,8 @@ export default function LeadIntakeMonitorPage() {
       created_at: new Date().toISOString(),
     };
 
-    setTimeout(() => {
-      setLogs([testLog, ...logs]);
-      INITIAL_INGESTION_LOGS.unshift(testLog);
-      setIsSimulating(false);
-    }, 400);
+    setLogs((prev) => [testLog, ...prev]);
+    setIsSimulating(false);
   };
 
   const getStatusBadge = (status: IngestionStatus) => {

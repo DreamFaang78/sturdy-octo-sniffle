@@ -32,6 +32,7 @@ import {
 } from '@/lib/notifications';
 import { openWhatsAppAndLogAction } from '@/lib/whatsapp';
 import { createClient } from '@/lib/supabase/client';
+import ReminderNotificationBanner from '@/components/ReminderNotificationBanner';
 
 async function fetchLeadsFromApi(): Promise<Lead[]> {
   try {
@@ -437,6 +438,9 @@ export default function CallerDashboard() {
         onClose={() => setIsManualLeadOpen(false)}
         onLeadAdded={handleLeadAdded}
       />
+
+      {/* Reminder Notification Banner */}
+      <ReminderNotificationBanner currentUser={currentUser} />
     </div>
   );
 }

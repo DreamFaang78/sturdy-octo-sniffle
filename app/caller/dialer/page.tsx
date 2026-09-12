@@ -26,7 +26,7 @@ import {
   LogOut,
   Calendar
 } from 'lucide-react';
-import { Lead, LeadNote, LeadStatus, Profile, UselessReason } from '@/lib/types';
+import { Lead, LeadNote, LeadStatus, Profile, UselessReason, CallReminder } from '@/lib/types';
 import { INITIAL_PROFILES } from '@/lib/mockDb';
 import { calculateFollowUpSchedule } from '@/lib/followup';
 import { 
@@ -37,6 +37,8 @@ import {
 } from '@/lib/notifications';
 import { createClient } from '@/lib/supabase/client';
 import QuickWhatsAppButtons from '@/components/QuickWhatsAppButtons';
+import RemindMeLaterModal from '@/components/RemindMeLaterModal';
+import ReminderNotificationBanner from '@/components/ReminderNotificationBanner';
 
 async function fetchLeadsFromApi(): Promise<Lead[]> {
   try {
@@ -61,6 +63,8 @@ export default function HighSpeedCallerDialer() {
   const [uselessReason, setUselessReason] = useState<UselessReason>('not_interested');
   const [notificationsAllowed, setNotificationsAllowed] = useState(false);
   const [endOfShiftModalOpen, setEndOfShiftModalOpen] = useState(false);
+  const [remindModalOpen, setRemindModalOpen] = useState(false);
+  const [reminders, setReminders] = useState<CallReminder[]>([]);
 
   // Undo State
   const [undoState, setUndoState] = useState<{
@@ -91,6 +95,21 @@ export default function HighSpeedCallerDialer() {
     }
   }, []);
 
+  // Fetch reminders for current caller
+  const fetchReminders = async () => {
+    try {
+      const res = await fetch(`/api/reminders?callerId=${currentUser.id}&status=pending`);
+      if (res.ok) {
+        const data = await res.json();
+        setReminders(data.reminders || []);
+      }
+    } catch (e) {}
+  };
+
+  useEffect(() => {
+    fetchReminders();
+  }, [currentUser.id]);
+
   // Fetch real leads from API and subscribe to updates
   useEffect(() => {
     const supabase = createClient();
@@ -117,6 +136,21 @@ export default function HighSpeedCallerDialer() {
     return () => { supabase.removeChannel(channel); };
   }, []);
 
+  // Handle URL query parameter leadId (direct jump)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const targetLeadId = params.get('leadId');
+      if (targetLeadId && leads.length > 0) {
+        const targetQueue = leads.filter((l) => l.assigned_to === currentUser.id);
+        const idx = targetQueue.findIndex((l) => l.id === targetLeadId);
+        if (idx !== -1) {
+          setCurrentIndex(idx);
+        }
+      }
+    }
+  }, [leads, currentUser.id]);
+
   const enableNotifications = async () => {
     const granted = await requestNotificationPermission();
     setNotificationsAllowed(granted);
@@ -130,6 +164,9 @@ export default function HighSpeedCallerDialer() {
   const myQueue = leads.filter((l) => l.assigned_to === currentUser.id);
   const currentLead = myQueue[currentIndex] || myQueue[0] || leads[0];
   const leadNotes = currentLead ? notes.filter((n) => n.lead_id === currentLead.id) : [];
+
+  // Active callback reminder for current lead
+  const activeReminder = currentLead ? reminders.find((r) => r.lead_id === currentLead.id && r.status === 'pending') : null;
 
   // Follow-up timing urgency badge
   const urgencyInfo = currentLead ? getFollowUpUrgency(currentLead.next_follow_up_date, currentLead.next_follow_up_time || '10:30 AM') : null;
@@ -378,15 +415,40 @@ export default function HighSpeedCallerDialer() {
             Attempts: {currentLead.phone_attempt_count}
           </div>
 
-          {/* Precise Follow-up Urgency Tag */}
-          {urgencyInfo && (
-            <div className="mb-3">
+          {/* Active Scheduled Callback Alert Badge */}
+          {activeReminder && (
+            <div className="mb-3 inline-flex items-center space-x-2 px-4 py-1.5 bg-indigo-500/20 border border-indigo-500/50 rounded-2xl text-xs text-indigo-300 font-bold shadow-md animate-pulse">
+              <Clock className="w-4 h-4 text-indigo-400 shrink-0" />
+              <span>
+                ⏰ Callback Scheduled: {new Date(activeReminder.remind_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} ({new Date(activeReminder.remind_at).toLocaleDateString([], { month: 'short', day: 'numeric' })})
+              </span>
+              {activeReminder.note && (
+                <span className="text-slate-300 italic truncate max-w-xs font-normal">
+                  — "{activeReminder.note}"
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Follow-up Urgency Tag & Remind Me Later Button */}
+          <div className="flex flex-wrap items-center justify-center gap-2 mb-3">
+            {urgencyInfo && (
               <span className={`inline-flex items-center space-x-1.5 px-3.5 py-1 rounded-full text-xs font-mono uppercase tracking-wide ${urgencyInfo.badgeColor}`}>
                 <Clock className="w-3.5 h-3.5 shrink-0" />
                 <span>{urgencyInfo.label}</span>
               </span>
-            </div>
-          )}
+            )}
+
+            <button
+              onClick={() => setRemindModalOpen(true)}
+              type="button"
+              className="inline-flex items-center space-x-1.5 px-3.5 py-1 bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/50 text-indigo-300 rounded-full text-xs font-bold transition shadow hover:scale-[1.02] active:scale-95"
+              title="Schedule Callback for later"
+            >
+              <Bell className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Remind Me Later</span>
+            </button>
+          </div>
 
           {/* Patient Name */}
           <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
@@ -693,6 +755,41 @@ export default function HighSpeedCallerDialer() {
           </div>
         </div>
       )}
+
+      {/* Remind Me Later Modal */}
+      {currentLead && (
+        <RemindMeLaterModal
+          isOpen={remindModalOpen}
+          onClose={() => setRemindModalOpen(false)}
+          lead={currentLead}
+          currentUser={currentUser}
+          onReminderSet={(newReminder) => {
+            setReminders((prev) => [newReminder, ...prev.filter((r) => r.lead_id !== newReminder.lead_id)]);
+            setLeads((prev) =>
+              prev.map((l) =>
+                l.id === currentLead.id
+                  ? {
+                      ...l,
+                      next_follow_up_date: new Date(newReminder.remind_at).toISOString().split('T')[0],
+                      next_follow_up_time: new Date(newReminder.remind_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                    }
+                  : l
+              )
+            );
+          }}
+        />
+      )}
+
+      {/* Real-time Reminder Notification Banner */}
+      <ReminderNotificationBanner
+        currentUser={currentUser}
+        onCallLead={(leadId) => {
+          const idx = myQueue.findIndex((l) => l.id === leadId);
+          if (idx !== -1) {
+            setCurrentIndex(idx);
+          }
+        }}
+      />
 
     </div>
   );

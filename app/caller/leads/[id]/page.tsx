@@ -24,11 +24,13 @@ import {
   Flame,
   Plus
 } from 'lucide-react';
-import { Lead, LeadNote, LeadStatus, OrderStatus, UselessReason, Profile } from '@/lib/types';
+import { Lead, LeadNote, LeadStatus, OrderStatus, UselessReason, Profile, CallReminder } from '@/lib/types';
 import { INITIAL_LEADS, INITIAL_NOTES, INITIAL_PROFILES } from '@/lib/mockDb';
 import { calculateFollowUpSchedule } from '@/lib/followup';
 import PatientCareChecklist from '@/components/PatientCareChecklist';
 import QuickWhatsAppButtons from '@/components/QuickWhatsAppButtons';
+import RemindMeLaterModal from '@/components/RemindMeLaterModal';
+import ReminderNotificationBanner from '@/components/ReminderNotificationBanner';
 
 
 export default function LeadDetailPage() {
@@ -46,6 +48,7 @@ export default function LeadDetailPage() {
   const [uselessNoteInput, setUselessNoteInput] = useState('');
   const [rtoReasonInput, setRtoReasonInput] = useState('');
   const [successToast, setSuccessToast] = useState<string | null>(null);
+  const [remindModalOpen, setRemindModalOpen] = useState(false);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -279,6 +282,14 @@ export default function LeadDetailPage() {
               >
                 <MessageSquare className="w-4 h-4 text-emerald-400" />
                 <span>WhatsApp</span>
+              </button>
+
+              <button
+                onClick={() => setRemindModalOpen(true)}
+                className="inline-flex items-center space-x-1.5 px-4 py-2 bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/30 text-xs font-semibold rounded-xl transition"
+              >
+                <Clock className="w-4 h-4 text-indigo-400" />
+                <span>Remind Me Later</span>
               </button>
             </div>
 
@@ -598,6 +609,25 @@ export default function LeadDetailPage() {
         onClose={() => setIsWhatsAppOpen(false)}
         lead={lead}
       />
+
+      {/* Remind Me Later Modal */}
+      {lead && (
+        <RemindMeLaterModal
+          isOpen={remindModalOpen}
+          onClose={() => setRemindModalOpen(false)}
+          lead={lead}
+          currentUser={currentUser}
+          onReminderSet={(reminder) => {
+            const dateStr = new Date(reminder.remind_at).toISOString().split('T')[0];
+            const timeStr = new Date(reminder.remind_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            setLead((prev) => prev ? { ...prev, next_follow_up_date: dateStr, next_follow_up_time: timeStr } : null);
+            showToast(`Reminder scheduled for ${timeStr} (${dateStr})`);
+          }}
+        />
+      )}
+
+      {/* Reminder Notification Banner */}
+      <ReminderNotificationBanner currentUser={currentUser} />
     </div>
   );
 }

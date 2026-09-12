@@ -106,6 +106,23 @@ export interface ManualWhatsAppLog {
   sent_at: string;
 }
 
+export type ReminderStatus = 'pending' | 'notified' | 'completed' | 'dismissed';
+
+export interface CallReminder {
+  id: string;
+  lead_id: string;
+  caller_id?: string | null;
+  caller_name?: string | null;
+  lead_name?: string | null;
+  lead_phone?: string | null;
+  remind_at: string;
+  notify_at: string;
+  note?: string | null;
+  status: ReminderStatus;
+  created_at: string;
+  updated_at?: string;
+}
+
 
 export interface DashboardMetrics {
   totalLeads: number;

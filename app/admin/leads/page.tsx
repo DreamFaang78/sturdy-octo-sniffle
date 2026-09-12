@@ -19,9 +19,11 @@ import {
   AlertCircle,
   Trash2,
   RefreshCw,
-  UploadCloud
+  UploadCloud,
+  Clock,
+  BellRing
 } from 'lucide-react';
-import { Lead, Profile } from '@/lib/types';
+import { Lead, Profile, CallReminder } from '@/lib/types';
 import { INITIAL_PROFILES, getSavedProfiles } from '@/lib/mockDb';
 import { distributeLeadsEvenly } from '@/lib/assignment';
 import { createClient } from '@/lib/supabase/client';
@@ -49,6 +51,7 @@ export default function AdminLeadsPage() {
   const [isCsvModalOpen, setIsCsvModalOpen] = useState(false);
   const [whatsappLead, setWhatsappLead] = useState<Lead | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [reminders, setReminders] = useState<CallReminder[]>([]);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -66,10 +69,21 @@ export default function AdminLeadsPage() {
     }
   }, []);
 
+  const loadReminders = async () => {
+    try {
+      const res = await fetch('/api/reminders');
+      if (res.ok) {
+        const data = await res.json();
+        setReminders(data.reminders || []);
+      }
+    } catch (e) {}
+  };
+
   const loadLeads = async () => {
     setIsLoading(true);
     const data = await fetchLeadsFromApi();
     setLeads(data);
+    await loadReminders();
     setIsLoading(false);
   };
 
@@ -387,21 +401,28 @@ export default function AdminLeadsPage() {
           
           {/* Status Tabs */}
           <div className="flex items-center space-x-1 overflow-x-auto pb-2 md:pb-0 scrollbar-none">
-            {(['all', 'unassigned', 'qualified', 'phone_not_picked', 'converted', 'useless'] as const).map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setSelectedStatusTab(tab)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wider transition whitespace-nowrap ${
-                  selectedStatusTab === tab
-                    ? 'bg-teal-500 text-slate-950 shadow'
-                    : 'bg-slate-900 text-slate-400 hover:text-white hover:bg-slate-800'
-                }`}
-              >
-                {tab === 'all'
-                  ? `All (${leads.length})`
-                  : `${tab.replace(/_/g, ' ')} (${leads.filter((l) => l.status === tab).length})`}
-              </button>
-            ))}
+            {(['all', 'unassigned', 'qualified', 'phone_not_picked', 'converted', 'useless', 'reminders'] as const).map((tab) => {
+              const label = tab === 'all'
+                ? `All (${leads.length})`
+                : tab === 'reminders'
+                ? `Callbacks (${reminders.filter((r) => r.status === 'pending').length})`
+                : `${tab.replace(/_/g, ' ')} (${leads.filter((l) => l.status === tab).length})`;
+
+              return (
+                <button
+                  key={tab}
+                  onClick={() => setSelectedStatusTab(tab)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wider transition whitespace-nowrap flex items-center space-x-1.5 ${
+                    selectedStatusTab === tab
+                      ? 'bg-teal-500 text-slate-950 shadow font-bold'
+                      : 'bg-slate-900 text-slate-400 hover:text-white hover:bg-slate-800'
+                  }`}
+                >
+                  {tab === 'reminders' && <Clock className="w-3.5 h-3.5 text-amber-400" />}
+                  <span>{label}</span>
+                </button>
+              );
+            })}
           </div>
 
           {/* Caller Dropdown Filter & Search */}
@@ -434,7 +455,125 @@ export default function AdminLeadsPage() {
 
         </div>
 
-        {/* LEADS TABLE */}
+        {/* TABLE SECTION: EITHER SCHEDULED REMINDERS OR LEADS TABLE */}
+        {selectedStatusTab === 'reminders' ? (
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl mt-2">
+            <div className="p-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <Clock className="w-5 h-5 text-teal-400" />
+                <h2 className="text-sm font-bold text-white uppercase tracking-wider">
+                  Scheduled Patient Callbacks & Reminders ({reminders.length} total)
+                </h2>
+              </div>
+              <button
+                onClick={loadReminders}
+                className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-lg flex items-center space-x-1 transition"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Refresh</span>
+              </button>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs text-slate-300">
+                <thead className="bg-slate-950 text-slate-400 uppercase tracking-wider text-[11px] font-semibold border-b border-slate-800">
+                  <tr>
+                    <th className="py-3.5 px-4">Patient & Phone</th>
+                    <th className="py-3.5 px-4">Assigned Caller</th>
+                    <th className="py-3.5 px-4">Scheduled Callback</th>
+                    <th className="py-3.5 px-4">Advance Alert</th>
+                    <th className="py-3.5 px-4">Patient Note / Reason</th>
+                    <th className="py-3.5 px-4">Status</th>
+                    <th className="py-3.5 px-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60">
+                  {reminders.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="py-12 text-center text-slate-500">
+                        No scheduled callbacks found in database.
+                      </td>
+                    </tr>
+                  ) : (
+                    reminders
+                      .filter((r) => {
+                        const matchesCaller =
+                          selectedCallerFilter === 'all'
+                            ? true
+                            : selectedCallerFilter === 'unassigned'
+                            ? !r.caller_id
+                            : r.caller_id === selectedCallerFilter;
+                        const matchesSearch =
+                          (r.lead_name && r.lead_name.toLowerCase().includes(searchQuery.toLowerCase())) ||
+                          (r.lead_phone && r.lead_phone.includes(searchQuery)) ||
+                          (r.note && r.note.toLowerCase().includes(searchQuery.toLowerCase()));
+                        return matchesCaller && matchesSearch;
+                      })
+                      .map((reminder) => (
+                        <tr key={reminder.id} className="hover:bg-slate-800/40 transition">
+                          <td className="py-3.5 px-4">
+                            <div className="font-semibold text-white text-sm">{reminder.lead_name || 'Patient'}</div>
+                            <div className="text-slate-400 font-mono text-xs">{reminder.lead_phone || 'N/A'}</div>
+                          </td>
+
+                          <td className="py-3.5 px-4">
+                            <span className="font-medium text-slate-200">{reminder.caller_name || 'Unassigned'}</span>
+                          </td>
+
+                          <td className="py-3.5 px-4 font-mono text-teal-300 font-bold">
+                            {new Date(reminder.remind_at).toLocaleDateString([], { month: 'short', day: 'numeric' })} at{' '}
+                            {new Date(reminder.remind_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </td>
+
+                          <td className="py-3.5 px-4 font-mono text-slate-400">
+                            {new Date(reminder.notify_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </td>
+
+                          <td className="py-3.5 px-4 max-w-xs text-slate-300 italic">
+                            {reminder.note ? `"${reminder.note}"` : '—'}
+                          </td>
+
+                          <td className="py-3.5 px-4">
+                            {reminder.status === 'pending' && (
+                              <span className="px-2 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded text-[11px] font-bold uppercase">
+                                Pending
+                              </span>
+                            )}
+                            {reminder.status === 'notified' && (
+                              <span className="px-2 py-0.5 bg-blue-500/20 text-blue-300 border border-blue-500/40 rounded text-[11px] font-bold uppercase">
+                                Notified
+                              </span>
+                            )}
+                            {reminder.status === 'completed' && (
+                              <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 rounded text-[11px] font-bold uppercase">
+                                Completed
+                              </span>
+                            )}
+                            {reminder.status === 'dismissed' && (
+                              <span className="px-2 py-0.5 bg-slate-800 text-slate-400 rounded text-[11px] font-medium uppercase">
+                                Dismissed
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="py-3.5 px-4 text-right space-x-2">
+                            <Link
+                              href={`/caller/dialer?leadId=${encodeURIComponent(reminder.lead_id)}`}
+                              className="inline-flex items-center space-x-1 px-2.5 py-1.5 bg-teal-500/10 hover:bg-teal-500 text-teal-400 hover:text-slate-950 text-xs font-semibold rounded-lg transition border border-teal-500/20"
+                            >
+                              <span>Dialer</span>
+                              <ChevronRight className="w-3.5 h-3.5" />
+                            </Link>
+                          </td>
+                        </tr>
+                      ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : (
+        /* LEADS TABLE */
         <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl mt-2">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs text-slate-300">
@@ -544,6 +683,7 @@ export default function AdminLeadsPage() {
             </table>
           </div>
         </div>
+        )}
 
       </main>
 

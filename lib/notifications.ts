@@ -103,3 +103,35 @@ export function getFollowUpUrgency(nextDateStr: string | null | undefined, nextT
     badgeColor: 'bg-blue-500/20 text-blue-300 border border-blue-500/30 font-medium',
   };
 }
+
+// Multi-tone urgent alert chime for incoming scheduled callbacks
+export function playReminderAlertChime() {
+  if (typeof window === 'undefined') return;
+
+  try {
+    const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContext) return;
+
+    const ctx = new AudioContext();
+    const tones = [523.25, 659.25, 783.99, 1046.5]; // C5, E5, G5, C6 arpeggio
+
+    tones.forEach((freq, idx) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, ctx.currentTime + idx * 0.1);
+
+      gain.gain.setValueAtTime(0.25, ctx.currentTime + idx * 0.1);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + idx * 0.1 + 0.25);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(ctx.currentTime + idx * 0.1);
+      osc.stop(ctx.currentTime + idx * 0.1 + 0.25);
+    });
+  } catch (e) {
+    // Gracefully ignore autoplay policy
+  }
+}

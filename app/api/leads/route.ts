@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
+    const { searchParams } = new URL(req.url);
+    const callerId = searchParams.get('callerId');
     const supabase = createAdminClient();
+
     const { data, error } = await supabase
       .from("leads")
       .select("*")
@@ -15,13 +18,28 @@ export async function GET() {
     }
 
     // Resolve assigned_to from column or JSONB form_answers
-    const formattedLeads = (data || []).map((l: any) => {
+    let formattedLeads = (data || []).map((l: any) => {
       const resolvedAssignee = l.assigned_to || l.form_answers?.assigned_to || l.form_answers?.assigned_caller || null;
       return {
         ...l,
         assigned_to: resolvedAssignee,
       };
     });
+
+    // If callerId is provided, strictly filter at API layer for this caller only
+    if (callerId && callerId !== 'all') {
+      const lowerCallerId = callerId.toLowerCase();
+      formattedLeads = formattedLeads.filter((l: any) => {
+        if (!l.assigned_to) return false;
+        const assignedStr = String(l.assigned_to).toLowerCase();
+        return (
+          assignedStr === lowerCallerId ||
+          (lowerCallerId.includes('haider') && (assignedStr.includes('haider') || assignedStr.includes('1'))) ||
+          (lowerCallerId.includes('gopi') && (assignedStr.includes('gopi') || assignedStr.includes('2'))) ||
+          (lowerCallerId.includes('abhishek') && (assignedStr.includes('abhishek') || assignedStr.includes('3')))
+        );
+      });
+    }
 
     return NextResponse.json({ leads: formattedLeads });
   } catch (err: any) {

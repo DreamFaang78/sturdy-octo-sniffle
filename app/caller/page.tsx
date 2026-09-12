@@ -34,9 +34,10 @@ import { openWhatsAppAndLogAction } from '@/lib/whatsapp';
 import { createClient } from '@/lib/supabase/client';
 import ReminderNotificationBanner from '@/components/ReminderNotificationBanner';
 
-async function fetchLeadsFromApi(): Promise<Lead[]> {
+async function fetchLeadsFromApi(callerId?: string): Promise<Lead[]> {
   try {
-    const res = await fetch('/api/leads', { cache: 'no-store' });
+    const url = callerId ? `/api/leads?callerId=${encodeURIComponent(callerId)}` : '/api/leads';
+    const res = await fetch(url, { cache: 'no-store' });
     if (!res.ok) return [];
     const json = await res.json();
     return json.leads || [];
@@ -48,7 +49,7 @@ async function fetchLeadsFromApi(): Promise<Lead[]> {
 export default function CallerDashboard() {
 
   const [currentUser, setCurrentUser] = useState<Profile>(INITIAL_PROFILES[1]); // Default to Caller Team
-  const [leads, setLeads] = useState<Lead[]>(INITIAL_LEADS);
+  const [leads, setLeads] = useState<Lead[]>([]);
   const [selectedTab, setSelectedTab] = useState<'all' | 'qualified' | 'phone_not_picked' | 'useless' | 'converted'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [whatsappLead, setWhatsappLead] = useState<Lead | null>(null);
@@ -59,25 +60,26 @@ export default function CallerDashboard() {
   useEffect(() => {
     const supabase = createClient();
 
-    const loadLeads = async () => {
-      const data = await fetchLeadsFromApi();
+    const loadLeads = async (callerId?: string) => {
+      const activeCallerId = callerId || currentUser.id;
+      const data = await fetchLeadsFromApi(activeCallerId);
       setLeads(data);
     };
 
-    loadLeads();
+    loadLeads(currentUser.id);
 
     const channel = supabase
       .channel('caller-dashboard-leads-realtime')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'leads' }, () => {
-        loadLeads();
+        loadLeads(currentUser.id);
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'leads' }, () => {
-        loadLeads();
+        loadLeads(currentUser.id);
       })
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, []);
+  }, [currentUser.id]);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -107,8 +109,6 @@ export default function CallerDashboard() {
 
   const todayStr = new Date().toISOString().split('T')[0];
 
-  const [viewScope, setViewScope] = useState<'my' | 'all'>('my');
-
   const isLeadAssignedToMe = (l: Lead) => {
     if (!l.assigned_to) return false;
     const assignedStr = String(l.assigned_to).toLowerCase();
@@ -118,18 +118,17 @@ export default function CallerDashboard() {
     return (
       assignedStr === currentId ||
       assignedStr === currentName ||
-      (currentName.includes('priya') && (assignedStr.includes('1') || assignedStr.includes('priya'))) ||
-      (currentName.includes('rahul') && (assignedStr.includes('2') || assignedStr.includes('rahul'))) ||
-      (currentName.includes('sneha') && (assignedStr.includes('3') || assignedStr.includes('sneha')))
+      (currentName.includes('haider') && (assignedStr.includes('haider') || assignedStr.includes('1'))) ||
+      (currentName.includes('gopi') && (assignedStr.includes('gopi') || assignedStr.includes('2'))) ||
+      (currentName.includes('abhishek') && (assignedStr.includes('abhishek') || assignedStr.includes('3')))
     );
   };
 
-  // Leads assigned to this caller (or all leads if viewScope === 'all')
+  // Leads strictly assigned to this caller
   const myLeads = leads.filter((l) => isLeadAssignedToMe(l));
-  const activeLeadPool = viewScope === 'my' ? myLeads : leads;
 
   // Today's Follow-ups Panel (due today or overdue, plus post-dispatch check-ins)
-  const todaysFollowups = activeLeadPool.filter((l) => {
+  const todaysFollowups = myLeads.filter((l) => {
     if (!l.next_follow_up_date || l.next_follow_up_date > todayStr) return false;
     if (l.status === 'useless') return false;
     if (l.status === 'converted') {
@@ -140,7 +139,7 @@ export default function CallerDashboard() {
   });
 
   // Filtered Leads according to active tab & search query
-  const filteredLeads = activeLeadPool.filter((l) => {
+  const filteredLeads = myLeads.filter((l) => {
     const matchesTab = selectedTab === 'all' ? true : l.status === selectedTab;
     const matchesSearch =
       l.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -279,45 +278,22 @@ export default function CallerDashboard() {
           
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4">
             
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="flex items-center space-x-1 bg-slate-900 p-1 rounded-xl border border-slate-800">
+            <div className="flex items-center space-x-1.5 overflow-x-auto pb-2 sm:pb-0 scrollbar-none">
+              {(['all', 'qualified', 'phone_not_picked', 'converted', 'useless'] as const).map((tab) => (
                 <button
-                  onClick={() => setViewScope('my')}
-                  className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
-                    viewScope === 'my'
-                      ? 'bg-teal-500 text-slate-950 shadow'
-                      : 'text-slate-400 hover:text-white'
+                  key={tab}
+                  onClick={() => setSelectedTab(tab as any)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wider transition whitespace-nowrap ${
+                    selectedTab === tab
+                      ? 'bg-teal-500 text-slate-950 font-bold shadow'
+                      : 'bg-slate-900 text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-800/80'
                   }`}
                 >
-                  My Assigned ({myLeads.length})
+                  {tab === 'all'
+                    ? `All Assigned (${myLeads.length})`
+                    : `${tab.replace(/_/g, ' ')} (${myLeads.filter((l) => l.status === tab).length})`}
                 </button>
-                <button
-                  onClick={() => setViewScope('all')}
-                  className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
-                    viewScope === 'all'
-                      ? 'bg-teal-500 text-slate-950 shadow'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  All Leads ({leads.length})
-                </button>
-              </div>
-
-              <div className="flex items-center space-x-1 overflow-x-auto pb-2 sm:pb-0 scrollbar-none">
-                {(['all', 'unassigned', 'qualified', 'phone_not_picked', 'converted', 'useless'] as const).map((tab) => (
-                  <button
-                    key={tab}
-                    onClick={() => setSelectedTab(tab as any)}
-                    className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wider transition whitespace-nowrap ${
-                      selectedTab === tab
-                        ? 'bg-slate-800 text-teal-400 border border-teal-500/30 shadow'
-                        : 'bg-slate-900/60 text-slate-400 hover:text-white hover:bg-slate-800'
-                    }`}
-                  >
-                    {tab === 'all' ? `All (${activeLeadPool.length})` : `${tab.replace(/_/g, ' ')} (${activeLeadPool.filter(l => l.status === tab).length})`}
-                  </button>
-                ))}
-              </div>
+              ))}
             </div>
 
             <div className="relative max-w-xs w-full">

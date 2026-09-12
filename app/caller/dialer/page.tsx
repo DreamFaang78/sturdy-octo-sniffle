@@ -40,9 +40,10 @@ import QuickWhatsAppButtons from '@/components/QuickWhatsAppButtons';
 import RemindMeLaterModal from '@/components/RemindMeLaterModal';
 import ReminderNotificationBanner from '@/components/ReminderNotificationBanner';
 
-async function fetchLeadsFromApi(): Promise<Lead[]> {
+async function fetchLeadsFromApi(callerId?: string): Promise<Lead[]> {
   try {
-    const res = await fetch('/api/leads', { cache: 'no-store' });
+    const url = callerId ? `/api/leads?callerId=${encodeURIComponent(callerId)}` : '/api/leads';
+    const res = await fetch(url, { cache: 'no-store' });
     if (!res.ok) return [];
     const json = await res.json();
     return json.leads || [];
@@ -115,7 +116,7 @@ export default function HighSpeedCallerDialer() {
     const supabase = createClient();
 
     const loadLeads = async () => {
-      const data = await fetchLeadsFromApi();
+      const data = await fetchLeadsFromApi(currentUser.id);
       if (data.length > 0) {
         setLeads(data);
       }
@@ -134,7 +135,7 @@ export default function HighSpeedCallerDialer() {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, []);
+  }, [currentUser.id]);
 
   // Handle URL query parameter leadId (direct jump)
   useEffect(() => {

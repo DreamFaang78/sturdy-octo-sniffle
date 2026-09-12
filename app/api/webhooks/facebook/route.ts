@@ -63,30 +63,43 @@ export async function POST(req: NextRequest) {
       const pageId = value.page_id;
       const formId = value.form_id;
 
-      let name = '';
-      let phone = '';
-      let campaign = `FB Form ${formId || ''}`;
-      let formAnswers: Record<string, any> = {};
+      let name = value.created_name || value.name || '';
+      let phone = value.phone_number || value.phone || '';
+      let campaign = value.campaign_name || value.campaign || `FB Form ${formId || ''}`;
+      let formAnswers: Record<string, any> = value.form_answers || { 'Leadgen ID': leadgenId, 'Page ID': pageId, 'Form ID': formId };
       let graphApiFailed = false;
       let apiErrorMessage = '';
 
       const accessToken = process.env.META_ACCESS_TOKEN;
       const supabase = createAdminClient();
 
-      // 1. Fetch full lead payload from Meta Graph API if access token is set
-      if (accessToken && !accessToken.startsWith('demo_')) {
+      // If it's a simulated or mock test ID (starts with leadgen_), skip Graph API and use payload directly
+      const isSimulatedTest = typeof leadgenId === 'string' && leadgenId.startsWith('leadgen_');
+
+      // 1. Fetch full lead payload from Meta Graph API for real Meta lead IDs
+      if (!isSimulatedTest && accessToken && !accessToken.startsWith('demo_')) {
         try {
           const graphUrl = `https://graph.facebook.com/v20.0/${leadgenId}?access_token=${accessToken}`;
           const graphData = await fetchGraphApiWithRetry(graphUrl, 3, 1000);
 
           if (graphData?.field_data) {
             graphData.field_data.forEach((field: any) => {
-              const fieldName = field.name?.toLowerCase() || '';
+              const fieldName = (field.name || '').toLowerCase();
               const val = field.values?.[0] || '';
               
-              if (fieldName.includes('full_name') || fieldName.includes('name')) {
+              if (
+                fieldName.includes('full_name') || 
+                fieldName.includes('first_name') || 
+                fieldName.includes('name')
+              ) {
                 name = val;
-              } else if (fieldName.includes('phone') || fieldName.includes('mobile')) {
+              } else if (
+                fieldName.includes('phone') || 
+                fieldName.includes('mobile') || 
+                fieldName.includes('contact') || 
+                fieldName.includes('whatsapp') ||
+                fieldName.includes('tel')
+              ) {
                 phone = val;
               } else {
                 formAnswers[field.name || fieldName] = val;
@@ -98,37 +111,39 @@ export async function POST(req: NextRequest) {
           graphApiFailed = true;
           apiErrorMessage = graphErr.message || String(graphErr);
         }
-      } else {
-        // Fallback for testing/mock payload if Meta token not configured
-        name = value.created_name || value.name || 'New Facebook Lead';
-        phone = value.phone_number || value.phone || '+919999900000';
-        formAnswers = value.form_answers || { 'Leadgen ID': leadgenId, 'Page ID': pageId };
+      } else if (!name || !phone) {
+        // Fallback defaults if not set in payload
+        if (!name) name = value.created_name || value.name || 'New Facebook Lead';
+        if (!phone) phone = value.phone_number || value.phone || '+919999900000';
       }
 
-      // 2. Handle Graph API Error — create partial lead instead of dropping it
+      // 2. Handle Graph API Error — create partial lead using any payload info available
       if (graphApiFailed) {
-        console.warn('[Meta Webhook] Graph API failed — creating partial lead from webhook payload.');
+        console.warn('[Meta Webhook] Graph API failed — saving lead with payload data.');
+
+        const leadName = name || value.created_name || value.name || `Facebook Lead — ${leadgenId}`;
+        const leadPhone = phone || value.phone_number || value.phone || '+910000000000';
 
         const errLogData = {
           meta_lead_id: leadgenId,
-          name: 'Facebook Lead (pending enrichment)',
-          phone: null,
+          name: leadName,
+          phone: leadPhone,
           campaign,
           status: 'api_error',
-          error_detail: `Graph API call failed after retries: ${apiErrorMessage}. Lead captured as partial — needs manual enrichment.`,
+          error_detail: `Graph API call failed: ${apiErrorMessage}. Saved with payload info.`,
           raw_payload: body,
           created_at: new Date().toISOString(),
         };
         await supabase.from('lead_ingestion_log').insert(errLogData);
         INITIAL_INGESTION_LOGS.unshift({ id: `ingest-${Date.now()}`, ...errLogData, status: 'api_error' });
 
-        // Still create a partial lead so it is not lost (provide fallback phone for NOT NULL column)
+        // Save lead with whatever info we have
         const partialLead = {
-          name: `Facebook Lead — ${leadgenId}`,
-          phone: '+910000000000',
+          name: leadName,
+          phone: leadPhone,
           source: 'Facebook Lead Ads',
           campaign,
-          form_answers: { 'Leadgen ID': leadgenId, 'Page ID': pageId, 'Form ID': formId, note: 'Graph API enrichment failed or mock test ID — token may be expired or dummy lead ID' },
+          form_answers: { ...formAnswers, 'Leadgen ID': leadgenId, 'Page ID': pageId, 'Form ID': formId, note: 'Graph API enrichment failed — token may be expired or dummy lead ID' },
           status: 'unassigned',
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
@@ -141,8 +156,10 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({
           success: true,
           status: 'partial_lead_created',
-          message: 'Lead captured without enrichment — Graph API token may be expired or test ID',
+          message: 'Lead captured — Graph API token may be expired or test ID',
           meta_lead_id: leadgenId,
+          name: leadName,
+          phone: leadPhone,
         });
       }
 

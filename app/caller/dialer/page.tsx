@@ -27,7 +27,7 @@ import {
   Calendar
 } from 'lucide-react';
 import { Lead, LeadNote, LeadStatus, Profile, UselessReason } from '@/lib/types';
-import { INITIAL_LEADS, INITIAL_NOTES, INITIAL_PROFILES } from '@/lib/mockDb';
+import { INITIAL_PROFILES } from '@/lib/mockDb';
 import { calculateFollowUpSchedule } from '@/lib/followup';
 import { 
   requestNotificationPermission, 
@@ -35,11 +35,23 @@ import {
   playNotificationChime, 
   getFollowUpUrgency 
 } from '@/lib/notifications';
+import { createClient } from '@/lib/supabase/client';
+
+async function fetchLeadsFromApi(): Promise<Lead[]> {
+  try {
+    const res = await fetch('/api/leads', { cache: 'no-store' });
+    if (!res.ok) return [];
+    const json = await res.json();
+    return json.leads || [];
+  } catch {
+    return [];
+  }
+}
 
 export default function HighSpeedCallerDialer() {
   const [currentUser, setCurrentUser] = useState<Profile>(INITIAL_PROFILES[1]); // Priya Sharma
-  const [leads, setLeads] = useState<Lead[]>(INITIAL_LEADS);
-  const [notes, setNotes] = useState<LeadNote[]>(INITIAL_NOTES);
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [notes, setNotes] = useState<LeadNote[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [showNotesAccordion, setShowNotesAccordion] = useState(false);
   const [noteInput, setNoteInput] = useState('');
@@ -76,6 +88,32 @@ export default function HighSpeedCallerDialer() {
         setNotificationsAllowed(true);
       }
     }
+  }, []);
+
+  // Fetch real leads from API and subscribe to updates
+  useEffect(() => {
+    const supabase = createClient();
+
+    const loadLeads = async () => {
+      const data = await fetchLeadsFromApi();
+      if (data.length > 0) {
+        setLeads(data);
+      }
+    };
+
+    loadLeads();
+
+    const channel = supabase
+      .channel('caller-dialer-leads-realtime')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'leads' }, () => {
+        loadLeads();
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'leads' }, () => {
+        loadLeads();
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
   }, []);
 
   const enableNotifications = async () => {

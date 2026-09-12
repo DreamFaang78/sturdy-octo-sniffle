@@ -46,7 +46,7 @@ async function fetchLeadsFromApi(): Promise<Lead[]> {
 
 export default function CallerDashboard() {
 
-  const [currentUser, setCurrentUser] = useState<Profile>(INITIAL_PROFILES[1]); // Default to Priya Sharma
+  const [currentUser, setCurrentUser] = useState<Profile>(INITIAL_PROFILES[1]); // Default to Caller Team
   const [leads, setLeads] = useState<Lead[]>(INITIAL_LEADS);
   const [selectedTab, setSelectedTab] = useState<'all' | 'qualified' | 'phone_not_picked' | 'useless' | 'converted'>('all');
   const [searchQuery, setSearchQuery] = useState('');

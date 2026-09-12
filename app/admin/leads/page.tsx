@@ -22,7 +22,7 @@ import {
   UploadCloud
 } from 'lucide-react';
 import { Lead, Profile } from '@/lib/types';
-import { INITIAL_PROFILES } from '@/lib/mockDb';
+import { INITIAL_PROFILES, getSavedProfiles } from '@/lib/mockDb';
 import { distributeLeadsEvenly } from '@/lib/assignment';
 import { createClient } from '@/lib/supabase/client';
 
@@ -61,6 +61,8 @@ export default function AdminLeadsPage() {
           }
         } catch (e) {}
       }
+      const savedProfiles = getSavedProfiles();
+      setCallers(savedProfiles.filter((p) => p.role === 'caller' && p.is_active));
     }
   }, []);
 

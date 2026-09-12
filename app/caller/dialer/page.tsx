@@ -49,7 +49,7 @@ async function fetchLeadsFromApi(): Promise<Lead[]> {
 }
 
 export default function HighSpeedCallerDialer() {
-  const [currentUser, setCurrentUser] = useState<Profile>(INITIAL_PROFILES[1]); // Priya Sharma
+  const [currentUser, setCurrentUser] = useState<Profile>(INITIAL_PROFILES[1]); // Caller Team
   const [leads, setLeads] = useState<Lead[]>([]);
   const [notes, setNotes] = useState<LeadNote[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);

@@ -14,32 +14,36 @@ export const INITIAL_PROFILES: Profile[] = [
   },
   {
     id: 'user-caller-1',
-    name: 'Priya Sharma',
-    email: 'priya@hommed.in',
+    name: 'Caller Team',
+    email: 'caller@hommed.in',
     phone: '+919876543211',
     role: 'caller',
     is_active: true,
     created_at: new Date(Date.now() - 25 * 24 * 3600 * 1000).toISOString(),
   },
-  {
-    id: 'user-caller-2',
-    name: 'Rahul Verma',
-    email: 'rahul@hommed.in',
-    phone: '+919876543212',
-    role: 'caller',
-    is_active: true,
-    created_at: new Date(Date.now() - 20 * 24 * 3600 * 1000).toISOString(),
-  },
-  {
-    id: 'user-caller-3',
-    name: 'Sneha Patel',
-    email: 'sneha@hommed.in',
-    phone: '+919876543213',
-    role: 'caller',
-    is_active: true,
-    created_at: new Date(Date.now() - 15 * 24 * 3600 * 1000).toISOString(),
-  },
 ];
+
+export function getSavedProfiles(): Profile[] {
+  if (typeof window === 'undefined') return INITIAL_PROFILES;
+  try {
+    const saved = localStorage.getItem('hommed_custom_profiles');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch (e) {}
+  return INITIAL_PROFILES;
+}
+
+export function saveProfiles(profiles: Profile[]): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem('hommed_custom_profiles', JSON.stringify(profiles));
+  } catch (e) {}
+}
+
 
 const todayStr = new Date().toISOString().split('T')[0];
 const yesterdayStr = new Date(Date.now() - 86400000).toISOString().split('T')[0];

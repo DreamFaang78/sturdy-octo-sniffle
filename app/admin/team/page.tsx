@@ -12,10 +12,12 @@ import {
   XCircle, 
   Lock, 
   User,
-  Power
+  Power,
+  Trash2,
+  RotateCcw
 } from 'lucide-react';
 import { Profile } from '@/lib/types';
-import { INITIAL_PROFILES } from '@/lib/mockDb';
+import { INITIAL_PROFILES, getSavedProfiles, saveProfiles } from '@/lib/mockDb';
 
 export default function TeamManagementPage() {
   const [currentUser, setCurrentUser] = useState<Profile>(INITIAL_PROFILES[0]);
@@ -38,6 +40,7 @@ export default function TeamManagementPage() {
           }
         } catch (e) {}
       }
+      setProfiles(getSavedProfiles());
     }
   }, []);
 
@@ -54,7 +57,23 @@ export default function TeamManagementPage() {
       return p;
     });
     setProfiles(updated);
+    saveProfiles(updated);
     showToast('Caller user status updated.');
+  };
+
+  const handleDeleteCaller = (profileId: string, profileName: string) => {
+    if (!confirm(`Are you sure you want to remove ${profileName}?`)) return;
+    const updated = profiles.filter((p) => p.id !== profileId);
+    setProfiles(updated);
+    saveProfiles(updated);
+    showToast(`Removed ${profileName}`);
+  };
+
+  const handleResetDefaults = () => {
+    if (!confirm('Reset team members to default 2 profiles (Admin & Default Caller)?')) return;
+    setProfiles(INITIAL_PROFILES);
+    saveProfiles(INITIAL_PROFILES);
+    showToast('Reset to default profiles');
   };
 
   const handleCreateCaller = (e: React.FormEvent) => {
@@ -71,7 +90,9 @@ export default function TeamManagementPage() {
       created_at: new Date().toISOString(),
     };
 
-    setProfiles([...profiles, created]);
+    const updated = [...profiles, created];
+    setProfiles(updated);
+    saveProfiles(updated);
     setNewName('');
     setNewEmail('');
     setNewPhone('');
@@ -96,17 +117,25 @@ export default function TeamManagementPage() {
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between pb-6 border-b border-slate-800">
           <div>
-            <h1 className="text-2xl font-bold text-white tracking-tight">Caller User Accounts</h1>
-            <p className="text-sm text-slate-400 mt-1">Manage the 3 calling team members and Super Admin access.</p>
+            <h1 className="text-2xl font-bold text-white tracking-tight">Team & User Accounts</h1>
+            <p className="text-sm text-slate-400 mt-1">Manage Admin and Caller accounts for automatic lead distribution & calling.</p>
           </div>
 
-          <div className="mt-4 md:mt-0">
+          <div className="mt-4 md:mt-0 flex items-center space-x-3">
+            <button
+              onClick={handleResetDefaults}
+              className="inline-flex items-center space-x-1.5 px-3 py-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-slate-200 text-xs font-semibold rounded-xl transition"
+              title="Reset to default Admin & Caller"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Reset Defaults</span>
+            </button>
             <button
               onClick={() => setIsModalOpen(true)}
               className="inline-flex items-center space-x-1.5 px-4 py-2 bg-teal-500 hover:bg-teal-400 text-slate-950 text-xs font-bold rounded-xl transition shadow"
             >
               <UserPlus className="w-4 h-4" />
-              <span>Create Caller Account</span>
+              <span>+ Add Caller Member</span>
             </button>
           </div>
         </div>
@@ -118,13 +147,13 @@ export default function TeamManagementPage() {
               
               <div>
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <div className={`p-2 rounded-xl ${profile.role === 'admin' ? 'bg-amber-500/20 text-amber-300' : 'bg-teal-500/20 text-teal-300'}`}>
+                  <div className="flex items-center space-x-3">
+                    <div className={`p-2.5 rounded-xl ${profile.role === 'admin' ? 'bg-amber-500/20 text-amber-300' : 'bg-teal-500/20 text-teal-300'}`}>
                       {profile.role === 'admin' ? <ShieldCheck className="w-5 h-5" /> : <UserCheck className="w-5 h-5" />}
                     </div>
                     <div>
                       <h3 className="font-bold text-white text-base">{profile.name}</h3>
-                      <span className="text-[10px] uppercase font-semibold text-slate-400">{profile.role === 'admin' ? 'Super Admin' : 'Calling Team'}</span>
+                      <span className="text-[10px] uppercase font-semibold text-slate-400">{profile.role === 'admin' ? 'Super Admin' : 'Calling Team Member'}</span>
                     </div>
                   </div>
 
@@ -135,20 +164,29 @@ export default function TeamManagementPage() {
                   </span>
                 </div>
 
-                <div className="mt-4 space-y-2 text-xs font-mono text-slate-300">
+                <div className="mt-4 space-y-2 text-xs font-mono text-slate-300 bg-slate-950/60 p-3 rounded-xl border border-slate-800/80">
                   <div className="flex items-center space-x-2">
-                    <Mail className="w-3.5 h-3.5 text-slate-500" />
-                    <span>{profile.email}</span>
+                    <Mail className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                    <span className="truncate">{profile.email}</span>
                   </div>
                   <div className="flex items-center space-x-2">
-                    <Phone className="w-3.5 h-3.5 text-slate-500" />
+                    <Phone className="w-3.5 h-3.5 text-slate-500 shrink-0" />
                     <span>{profile.phone || '+919876543210'}</span>
                   </div>
                 </div>
               </div>
 
               {profile.role !== 'admin' && (
-                <div className="mt-6 pt-4 border-t border-slate-800 flex justify-end">
+                <div className="mt-6 pt-4 border-t border-slate-800 flex items-center justify-between">
+                  <button
+                    onClick={() => handleDeleteCaller(profile.id, profile.name)}
+                    className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition"
+                    title="Remove Caller"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete</span>
+                  </button>
+
                   <button
                     onClick={() => handleToggleActive(profile.id)}
                     className={`inline-flex items-center space-x-1 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
@@ -158,7 +196,7 @@ export default function TeamManagementPage() {
                     }`}
                   >
                     <Power className="w-3.5 h-3.5" />
-                    <span>{profile.is_active ? 'Deactivate User' : 'Activate User'}</span>
+                    <span>{profile.is_active ? 'Deactivate' : 'Activate'}</span>
                   </button>
                 </div>
               )}
@@ -172,9 +210,12 @@ export default function TeamManagementPage() {
       {/* CREATE CALLER MODAL */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 backdrop-blur-sm p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-xl max-w-md w-full p-6 text-slate-100 shadow-2xl">
-            <h3 className="text-lg font-semibold text-white mb-2">Create New Caller Account</h3>
-            <p className="text-xs text-slate-400 mb-4">No self-signup — Super Admin creates caller accounts directly.</p>
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 text-slate-100 shadow-2xl">
+            <div className="flex items-center space-x-2 mb-2">
+              <UserPlus className="w-5 h-5 text-teal-400" />
+              <h3 className="text-lg font-bold text-white">Add Calling Team Member</h3>
+            </div>
+            <p className="text-xs text-slate-400 mb-5">Create a caller profile for lead distribution and outbound calls.</p>
 
             <form onSubmit={handleCreateCaller} className="space-y-4">
               <div>
@@ -223,19 +264,19 @@ export default function TeamManagementPage() {
                 />
               </div>
 
-              <div className="flex justify-end space-x-3 pt-3 border-t border-slate-800">
+              <div className="flex justify-end space-x-3 pt-4 border-t border-slate-800">
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 bg-slate-800 text-slate-300 text-xs rounded-lg font-medium"
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-xl font-medium transition"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-teal-500 hover:bg-teal-400 text-slate-950 text-xs font-bold rounded-lg transition shadow"
+                  className="px-4 py-2 bg-teal-500 hover:bg-teal-400 text-slate-950 text-xs font-bold rounded-xl transition shadow"
                 >
-                  Create Caller
+                  Add Member
                 </button>
               </div>
             </form>
@@ -245,3 +286,4 @@ export default function TeamManagementPage() {
     </div>
   );
 }
+

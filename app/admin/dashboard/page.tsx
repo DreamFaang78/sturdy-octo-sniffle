@@ -19,7 +19,7 @@ import {
   Zap
 } from 'lucide-react';
 import { Lead, Profile, CallerPerformance } from '@/lib/types';
-import { INITIAL_LEADS, INITIAL_PROFILES } from '@/lib/mockDb';
+import { INITIAL_LEADS, INITIAL_PROFILES, getSavedProfiles } from '@/lib/mockDb';
 import { distributeLeadsEvenly } from '@/lib/assignment';
 import { createClient } from '@/lib/supabase/client';
 
@@ -52,6 +52,8 @@ export default function AdminDashboardPage() {
           }
         } catch (e) {}
       }
+      const savedProfiles = getSavedProfiles();
+      setCallers(savedProfiles.filter((p) => p.role === 'caller' && p.is_active));
     }
   }, []);
 

@@ -132,7 +132,7 @@ export default function RtoTrackingPage() {
                       <span>{lead.phone}</span>
                     </div>
                     <div>Campaign: <span className="text-slate-200">{lead.campaign || 'Diagnostics'}</span></div>
-                    <div>Assigned Caller: <span className="text-slate-200">{lead.assignee?.name || 'Priya Sharma'}</span></div>
+                    <div>Assigned Caller: <span className="text-slate-200">{lead.assignee?.name || 'Calling Team'}</span></div>
                   </div>
 
                   {lead.rto_reason && (

@@ -14,7 +14,16 @@ export async function GET() {
       return NextResponse.json({ leads: [], error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ leads: data || [] });
+    // Resolve assigned_to from column or JSONB form_answers
+    const formattedLeads = (data || []).map((l: any) => {
+      const resolvedAssignee = l.assigned_to || l.form_answers?.assigned_to || l.form_answers?.assigned_caller || null;
+      return {
+        ...l,
+        assigned_to: resolvedAssignee,
+      };
+    });
+
+    return NextResponse.json({ leads: formattedLeads });
   } catch (err: any) {
     console.error("[API /leads] Unexpected error:", err);
     return NextResponse.json({ leads: [], error: err.message }, { status: 500 });
@@ -57,6 +66,8 @@ export async function DELETE(req: Request) {
   }
 }
 
+const isUuid = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+
 export async function PATCH(req: Request) {
   try {
     const body = await req.json();
@@ -66,15 +77,28 @@ export async function PATCH(req: Request) {
     if (Array.isArray(body?.updates)) {
       for (const update of body.updates) {
         if (!update.id) continue;
-        await supabase
-          .from('leads')
-          .update({
-            assigned_to: update.assigned_to || null,
-            assigned_at: update.assigned_at || (update.assigned_to ? new Date().toISOString() : null),
-            status: update.status || (update.assigned_to ? 'qualified' : 'unassigned'),
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', update.id);
+        const assignedVal = update.assigned_to;
+        const validUuid = assignedVal && isUuid(assignedVal) ? assignedVal : null;
+
+        const { data: currentLead } = await supabase.from('leads').select('form_answers').eq('id', update.id).single();
+        const mergedFormAnswers = {
+          ...(currentLead?.form_answers || {}),
+          assigned_to: assignedVal || null,
+          assigned_caller: assignedVal || null,
+        };
+
+        const updatePayload: Record<string, any> = {
+          status: update.status || (assignedVal ? 'qualified' : 'unassigned'),
+          form_answers: mergedFormAnswers,
+          updated_at: new Date().toISOString(),
+        };
+
+        if (validUuid) {
+          updatePayload.assigned_to = validUuid;
+          updatePayload.assigned_at = new Date().toISOString();
+        }
+
+        await supabase.from('leads').update(updatePayload).eq('id', update.id);
       }
       return NextResponse.json({ success: true, count: body.updates.length });
     }
@@ -85,10 +109,22 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ error: 'Missing lead id' }, { status: 400 });
     }
 
-    const updates: Record<string, any> = { updated_at: new Date().toISOString() };
+    const { data: currentLead } = await supabase.from('leads').select('form_answers').eq('id', id).single();
+    const mergedFormAnswers = {
+      ...(currentLead?.form_answers || {}),
+      ...(assigned_to !== undefined ? { assigned_to: assigned_to || null, assigned_caller: assigned_to || null } : {}),
+    };
+
+    const updates: Record<string, any> = { 
+      form_answers: mergedFormAnswers,
+      updated_at: new Date().toISOString() 
+    };
+
     if (assigned_to !== undefined) {
-      updates.assigned_to = assigned_to || null;
-      updates.assigned_at = assigned_to ? new Date().toISOString() : null;
+      if (assigned_to && isUuid(assigned_to)) {
+        updates.assigned_to = assigned_to;
+        updates.assigned_at = new Date().toISOString();
+      }
     }
     if (status !== undefined) updates.status = status;
     if (next_follow_up_date !== undefined) updates.next_follow_up_date = next_follow_up_date;

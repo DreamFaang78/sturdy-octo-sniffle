@@ -60,17 +60,22 @@ export default function QuickWhatsAppButtons({
       const data = await res.json();
 
       if (!res.ok || !data.success) {
-        const errorText = data.error || 'Failed to dispatch WhatsApp message via AiSensy.';
+        const errorText = data.error || 'Failed to prepare WhatsApp message.';
         setInlineFeedback({ type: 'error', message: errorText });
         if (onError) onError(errorText);
       } else {
-        const successText = `WhatsApp sent to ${lead.name || 'lead'}!`;
+        // Direct launch into WhatsApp Business / Web
+        if (data.waLink && typeof window !== 'undefined') {
+          window.open(data.waLink, '_blank');
+        }
+
+        const successText = `Opened WhatsApp Business for ${lead.name || 'lead'}!`;
         setLastSent({ type, waLink: data.waLink });
         setInlineFeedback({ type: 'success', message: successText });
         if (onSuccess) onSuccess(successText);
       }
     } catch (err: any) {
-      const errorText = err.message || 'Network error while contacting WhatsApp API.';
+      const errorText = err.message || 'Error opening WhatsApp.';
       setInlineFeedback({ type: 'error', message: errorText });
       if (onError) onError(errorText);
     } finally {
@@ -84,7 +89,7 @@ export default function QuickWhatsAppButtons({
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-1.5 text-xs font-bold uppercase tracking-wider text-emerald-400">
           <MessageSquare className="w-4 h-4 text-emerald-400" />
-          <span>Quick WhatsApp Message (AiSensy)</span>
+          <span>Quick WhatsApp Business (1-Tap Send - ₹0 Cost)</span>
         </div>
         {!hasPhone && (
           <span className="text-[11px] font-mono text-rose-400 flex items-center space-x-1 bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20">

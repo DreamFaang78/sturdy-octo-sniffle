@@ -178,10 +178,10 @@ export default function WhatsAppTemplatesAdminPage() {
               <div className="p-2 bg-emerald-500/20 text-emerald-400 rounded-xl">
                 <MessageSquare className="w-6 h-6" />
               </div>
-              <span>WhatsApp Templates (AiSensy Engine)</span>
+              <span>WhatsApp Templates (WhatsApp Business Direct)</span>
             </h1>
             <p className="text-sm text-slate-400 mt-1">
-              Configure the 3 1-tap message templates dispatched by callers from the dialer.
+              Configure the 3 1-tap message templates dispatched directly by callers via WhatsApp Business.
             </p>
           </div>
 
@@ -346,7 +346,7 @@ export default function WhatsAppTemplatesAdminPage() {
             </div>
 
             <div className="mt-4 text-[11px] text-slate-500 text-center font-mono">
-              AiSensy API Endpoint: <code className="text-slate-400">https://backend.aisensy.com/campaign/t1/api/v2</code>
+              Dispatch Mode: <span className="text-emerald-400 font-bold">1-Click Direct WhatsApp Business (wa.me - ₹0 Cost)</span>
             </div>
           </div>
 

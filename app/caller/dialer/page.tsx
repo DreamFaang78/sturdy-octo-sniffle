@@ -329,55 +329,55 @@ export default function HighSpeedCallerDialer() {
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between selection:bg-teal-500 selection:text-slate-950">
       
       {/* TOP HEADER */}
-      <header className="bg-slate-900 border-b border-slate-800 px-4 py-3 sticky top-0 z-40">
-        <div className="max-w-5xl mx-auto flex items-center justify-between">
+      <header className="bg-slate-900/95 backdrop-blur-md border-b border-slate-800 px-3 sm:px-4 py-2.5 sticky top-0 z-40">
+        <div className="max-w-4xl mx-auto flex items-center justify-between gap-2">
           
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-2 sm:space-x-3">
             <Link
               href="/caller"
-              className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-semibold flex items-center space-x-1 transition"
+              className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-semibold flex items-center space-x-1 transition shrink-0"
             >
               <ArrowLeft className="w-4 h-4" />
-              <span className="hidden sm:inline">Exit Focus Mode</span>
+              <span className="hidden sm:inline">Exit Focus</span>
             </Link>
 
-            <div className="text-xs font-semibold text-teal-400 uppercase tracking-wider flex items-center space-x-1.5">
-              <Sparkles className="w-4 h-4 text-teal-400 animate-pulse" />
-              <span>High-Speed Dialing Mode</span>
+            <div className="text-[11px] sm:text-xs font-semibold text-teal-400 uppercase tracking-wider flex items-center space-x-1.5 shrink-0">
+              <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-teal-400 animate-pulse shrink-0" />
+              <span>Speed Dial</span>
             </div>
           </div>
 
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-2 sm:space-x-3">
             {/* Pop-up Notification Permission Button */}
             <button
               onClick={enableNotifications}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition ${
+              className={`px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition ${
                 notificationsAllowed
                   ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
                   : 'bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold shadow'
               }`}
             >
               {notificationsAllowed ? <Bell className="w-3.5 h-3.5 text-emerald-400" /> : <BellRing className="w-3.5 h-3.5" />}
-              <span>{notificationsAllowed ? 'Pop-ups Enabled' : 'Enable Pop-ups'}</span>
+              <span className="hidden xs:inline">{notificationsAllowed ? 'Pop-ups' : 'Enable Pop-ups'}</span>
             </button>
 
             {/* End of Shift Warning Trigger */}
             <button
               onClick={() => setEndOfShiftModalOpen(true)}
-              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-lg flex items-center space-x-1 transition"
+              className="px-2.5 py-1 sm:px-3 sm:py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-lg flex items-center space-x-1 transition"
               title="Shift Summary Check"
             >
               <Clock className="w-3.5 h-3.5 text-amber-400" />
               <span className="hidden md:inline">Shift Check</span>
             </button>
 
-            <span className="text-xs font-mono text-slate-400">
-              Lead <span className="text-white font-bold">{currentIndex + 1}</span> of {myQueue.length}
+            <span className="text-xs font-mono text-slate-400 whitespace-nowrap">
+              <span className="text-white font-bold">{currentIndex + 1}</span>/{myQueue.length}
             </span>
 
             <button
               onClick={handleSkipLead}
-              className="inline-flex items-center space-x-1 px-3 py-1.5 bg-slate-800/80 hover:bg-slate-800 text-slate-400 hover:text-white text-xs font-medium rounded-lg transition border border-slate-700/50"
+              className="inline-flex items-center space-x-1 px-2.5 py-1 sm:px-3 sm:py-1.5 bg-slate-800/80 hover:bg-slate-800 text-slate-400 hover:text-white text-xs font-medium rounded-lg transition border border-slate-700/50"
             >
               <span>Skip</span>
               <SkipForward className="w-3.5 h-3.5" />
@@ -389,38 +389,62 @@ export default function HighSpeedCallerDialer() {
 
       {/* FLOATING UNDO TOAST NOTIFICATION */}
       {undoState && (
-        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 bg-slate-900 border border-teal-500/40 text-slate-100 px-5 py-3 rounded-2xl shadow-2xl flex items-center space-x-4 animate-in slide-in-from-top duration-200">
+        <div className="fixed top-14 left-1/2 -translate-x-1/2 z-50 bg-slate-900 border border-teal-500/40 text-slate-100 px-4 py-2.5 rounded-2xl shadow-2xl flex items-center space-x-3 animate-in slide-in-from-top duration-200">
           <div className="text-xs">
             <span className="font-semibold text-teal-400">Auto-Advanced: </span>
             <span className="text-slate-200">{undoState.toastMessage}</span>
           </div>
           <button
             onClick={handleUndo}
-            className="inline-flex items-center space-x-1 bg-amber-500 hover:bg-amber-400 text-slate-950 px-3 py-1 rounded-lg text-xs font-bold transition shadow"
+            className="inline-flex items-center space-x-1 bg-amber-500 hover:bg-amber-400 text-slate-950 px-2.5 py-0.5 rounded-lg text-xs font-bold transition shadow shrink-0"
           >
-            <RotateCcw className="w-3.5 h-3.5" />
+            <RotateCcw className="w-3 h-3" />
             <span>UNDO</span>
           </button>
         </div>
       )}
 
       {/* MAIN SINGLE LEAD CONTAINER */}
-      <main className="max-w-3xl w-full mx-auto px-4 py-6 flex-1 flex flex-col justify-center space-y-6">
+      <main className="max-w-2xl w-full mx-auto px-3 sm:px-4 py-3 sm:py-4 space-y-3.5 flex-1 pb-24 sm:pb-28">
         
-        {/* GIANT TAP-TO-CALL PATIENT CARD WITH PRECISE TIMING BADGE */}
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl text-center relative overflow-hidden">
+        {/* SECTION 1: LEAD IDENTITY & TAP-TO-CALL CARD */}
+        <section className="bg-slate-900 border border-slate-800/90 rounded-2xl sm:rounded-3xl p-4 sm:p-5 shadow-xl text-center relative overflow-hidden">
           
-          {/* Attempt Badge */}
-          <div className="absolute top-4 right-4 bg-slate-950 border border-slate-800 px-3 py-1 rounded-full text-[11px] font-mono font-medium text-amber-400">
-            Attempts: {currentLead.phone_attempt_count}
+          {/* Status & Timing Badges Row */}
+          <div className="flex flex-wrap items-center justify-center gap-1.5 sm:gap-2 mb-2">
+            
+            {/* Attempt Badge */}
+            <span className="bg-slate-950 border border-slate-800 px-2.5 py-0.5 rounded-full text-[11px] font-mono font-medium text-amber-400 shrink-0">
+              Attempts: {currentLead.phone_attempt_count}
+            </span>
+
+            {/* Follow-up Urgency Tag */}
+            {urgencyInfo && (
+              <span className={`inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[11px] font-mono uppercase tracking-wide shrink-0 ${urgencyInfo.badgeColor}`}>
+                <Clock className="w-3 h-3 shrink-0" />
+                <span>{urgencyInfo.label}</span>
+              </span>
+            )}
+
+            {/* Remind Me Later Button */}
+            <button
+              onClick={() => setRemindModalOpen(true)}
+              type="button"
+              className="inline-flex items-center space-x-1 px-2.5 py-0.5 bg-indigo-600/25 hover:bg-indigo-600/40 border border-indigo-500/40 text-indigo-300 rounded-full text-[11px] font-bold transition shadow hover:scale-[1.02] active:scale-95 shrink-0"
+              title="Schedule Callback for later"
+            >
+              <Bell className="w-3 h-3 text-indigo-400" />
+              <span>Remind Me Later</span>
+            </button>
+
           </div>
 
-          {/* Active Scheduled Callback Alert Badge */}
+          {/* Active Scheduled Callback Alert Banner */}
           {activeReminder && (
-            <div className="mb-3 inline-flex items-center space-x-2 px-4 py-1.5 bg-indigo-500/20 border border-indigo-500/50 rounded-2xl text-xs text-indigo-300 font-bold shadow-md animate-pulse">
-              <Clock className="w-4 h-4 text-indigo-400 shrink-0" />
+            <div className="mb-2.5 inline-flex items-center space-x-1.5 px-3 py-1 bg-indigo-500/20 border border-indigo-500/50 rounded-xl text-xs text-indigo-300 font-bold shadow-sm animate-pulse">
+              <Clock className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
               <span>
-                ⏰ Callback Scheduled: {new Date(activeReminder.remind_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} ({new Date(activeReminder.remind_at).toLocaleDateString([], { month: 'short', day: 'numeric' })})
+                ⏰ Callback: {new Date(activeReminder.remind_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} ({new Date(activeReminder.remind_at).toLocaleDateString([], { month: 'short', day: 'numeric' })})
               </span>
               {activeReminder.note && (
                 <span className="text-slate-300 italic truncate max-w-xs font-normal">
@@ -430,47 +454,27 @@ export default function HighSpeedCallerDialer() {
             </div>
           )}
 
-          {/* Follow-up Urgency Tag & Remind Me Later Button */}
-          <div className="flex flex-wrap items-center justify-center gap-2 mb-3">
-            {urgencyInfo && (
-              <span className={`inline-flex items-center space-x-1.5 px-3.5 py-1 rounded-full text-xs font-mono uppercase tracking-wide ${urgencyInfo.badgeColor}`}>
-                <Clock className="w-3.5 h-3.5 shrink-0" />
-                <span>{urgencyInfo.label}</span>
-              </span>
-            )}
-
-            <button
-              onClick={() => setRemindModalOpen(true)}
-              type="button"
-              className="inline-flex items-center space-x-1.5 px-3.5 py-1 bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/50 text-indigo-300 rounded-full text-xs font-bold transition shadow hover:scale-[1.02] active:scale-95"
-              title="Schedule Callback for later"
-            >
-              <Bell className="w-3.5 h-3.5 text-indigo-400" />
-              <span>Remind Me Later</span>
-            </button>
-          </div>
-
-          {/* Patient Name */}
-          <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
+          {/* Patient Name & Subtitle */}
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight leading-tight">
             {currentLead.name}
           </h1>
 
-          <div className="text-xs text-slate-400 mt-1 font-mono">
+          <div className="text-[11px] text-slate-400 mt-0.5 font-mono">
             {currentLead.campaign || 'Hommed Facebook Lead Ads'}
           </div>
 
           {/* GIANT TAP-TO-CALL BUTTON */}
-          <div className="mt-6">
+          <div className="mt-3.5 w-full">
             <a
               href={`tel:${currentLead.phone}`}
-              className="inline-flex items-center justify-center space-x-3 w-full sm:w-auto px-8 py-4 bg-teal-500 hover:bg-teal-400 text-slate-950 font-black text-xl rounded-2xl transition shadow-2xl hover:scale-[1.02] active:scale-95"
+              className="inline-flex items-center justify-center space-x-3 w-full py-3.5 sm:py-4 px-6 bg-teal-500 hover:bg-teal-400 text-slate-950 font-black text-lg sm:text-xl rounded-xl sm:rounded-2xl transition shadow-xl hover:scale-[1.01] active:scale-95"
             >
-              <Phone className="w-6 h-6 fill-slate-950" />
-              <span>Tap to Call {currentLead.phone}</span>
+              <Phone className="w-5 h-5 sm:w-6 sm:h-6 fill-slate-950 shrink-0" />
+              <span className="tracking-tight">Tap to Call {currentLead.phone}</span>
             </a>
           </div>
 
-          {/* Form Answers Pill - Filtered for Caller Focus */}
+          {/* Form Answers Pill - Inquiry Data */}
           {(() => {
             const answers = currentLead.form_answers || {};
 
@@ -494,152 +498,161 @@ export default function HighSpeedCallerDialer() {
             if (displayRows.length === 0) return null;
 
             return (
-              <div className="mt-5 p-3.5 bg-slate-950 border border-slate-800 rounded-xl text-left text-xs text-slate-300 space-y-1.5 max-w-md mx-auto shadow-inner">
-                <div className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider mb-1">
+              <div className="mt-3 p-3 bg-slate-950/80 border border-slate-800/80 rounded-xl text-left text-xs text-slate-300 space-y-1 max-w-md mx-auto shadow-inner">
+                <div className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider mb-0.5">
                   Inquiry Data
                 </div>
                 {displayRows.map((row, idx) => (
-                  <div key={idx} className="flex justify-between items-start gap-4">
-                    <span className="text-slate-400 font-mono text-xs shrink-0">{row.label}:</span>
-                    <span className="font-semibold text-white text-right text-xs break-words">{row.value}</span>
+                  <div key={idx} className="flex justify-between items-start gap-3">
+                    <span className="text-slate-400 font-mono text-[11px] shrink-0">{row.label}:</span>
+                    <span className="font-semibold text-white text-right text-[11px] break-words">{row.value}</span>
                   </div>
                 ))}
               </div>
             );
           })()}
 
-        </div>
+        </section>
 
-        {/* 4 FIXED COLOR-CODED STATUS ACTION BUTTONS */}
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-          
-          {/* 1. Qualified (Blue) */}
-          <button
-            onClick={() => handleStatusSelect('qualified')}
-            className="p-4 bg-blue-600/20 hover:bg-blue-600/30 border-2 border-blue-500/50 hover:border-blue-400 text-blue-300 rounded-2xl flex flex-col items-center justify-center space-y-1 transition shadow-lg hover:scale-[1.02] active:scale-95"
-          >
-            <CheckCircle2 className="w-7 h-7 text-blue-400" />
-            <span className="text-sm font-extrabold uppercase tracking-wide">1. Qualified</span>
-            <span className="text-[10px] text-blue-300/80 font-medium">7-Day Follow-Up</span>
-          </button>
-
-          {/* 2. Phone Not Picked (Amber) */}
-          <button
-            onClick={handlePhoneNotPicked}
-            className="p-4 bg-amber-600/20 hover:bg-amber-600/30 border-2 border-amber-500/50 hover:border-amber-400 text-amber-300 rounded-2xl flex flex-col items-center justify-center space-y-1 transition shadow-lg hover:scale-[1.02] active:scale-95"
-          >
-            <PhoneMissed className="w-7 h-7 text-amber-400" />
-            <span className="text-sm font-extrabold uppercase tracking-wide">2. Not Picked</span>
-            <span className="text-[10px] text-amber-300/80 font-bold">+1 Attempt → Remind Tomorrow</span>
-          </button>
-
-          {/* 3. Useless Lead (Red) */}
-          <button
-            onClick={() => handleStatusSelect('useless')}
-            className="p-4 bg-rose-600/20 hover:bg-rose-600/30 border-2 border-rose-500/50 hover:border-rose-400 text-rose-300 rounded-2xl flex flex-col items-center justify-center space-y-1 transition shadow-lg hover:scale-[1.02] active:scale-95"
-          >
-            <XCircle className="w-7 h-7 text-rose-400" />
-            <span className="text-sm font-extrabold uppercase tracking-wide">3. Useless</span>
-            <span className="text-[10px] text-rose-300/80 font-medium">Spam / Wrong #</span>
-          </button>
-
-          {/* 4. CONVERTED (Green) */}
-          <button
-            onClick={() => handleStatusSelect('converted')}
-            className="col-span-2 md:col-span-3 p-5 bg-emerald-500 hover:bg-emerald-400 border-2 border-emerald-400 text-slate-950 rounded-2xl flex items-center justify-center space-x-3 transition shadow-2xl hover:scale-[1.02] active:scale-95"
-          >
-            <Package className="w-8 h-8 fill-slate-950 shrink-0" />
-            <div className="text-left">
-              <div className="text-lg font-black uppercase tracking-wider leading-none">4. CONVERTED (Paying Order)</div>
-              <div className="text-xs font-bold opacity-90 mt-0.5">Success Outcome — Primary Goal</div>
-            </div>
-          </button>
-
-        </div>
-
-        {/* QUICK WHATSAPP ACTIONS (AISENSY) */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl">
-          <QuickWhatsAppButtons
-            lead={currentLead}
-            currentUser={currentUser}
-            onSuccess={(msg) => {
-              playNotificationChime();
-            }}
-          />
-        </div>
-
-        {/* VOICE-TO-TEXT & QUICK NOTE INPUT */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl">
-          <div className="flex items-center justify-between mb-2">
-            <label className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center space-x-1.5">
-              <FileText className="w-4 h-4 text-teal-400" />
-              <span>Quick Call Note (Optional)</span>
-            </label>
-
-            <button
-              type="button"
-              onClick={toggleSpeechRecognition}
-              className={`inline-flex items-center space-x-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition ${
-                isListening
-                  ? 'bg-rose-500 text-white animate-pulse'
-                  : 'bg-slate-800 text-slate-300 hover:text-teal-400 hover:bg-slate-700'
-              }`}
-            >
-              {isListening ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5 text-teal-400" />}
-              <span>{isListening ? 'Listening...' : 'Voice Dictate'}</span>
-            </button>
+        {/* SECTION 2: 4 PRIMARY OUTCOME BUTTONS (Above the fold) */}
+        <section className="space-y-1.5">
+          <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 px-1">
+            Log Call Outcome
           </div>
 
-          <input
-            type="text"
-            value={noteInput}
-            onChange={(e) => setNoteInput(e.target.value)}
-            placeholder="Type or speak call notes..."
-            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-teal-500"
-          />
-        </div>
+          <div className="grid grid-cols-2 gap-2 sm:gap-2.5">
+            
+            {/* 1. Qualified (Blue) */}
+            <button
+              onClick={() => handleStatusSelect('qualified')}
+              className="p-3 sm:p-3.5 bg-blue-600/15 hover:bg-blue-600/25 border-2 border-blue-500/40 hover:border-blue-400 text-blue-300 rounded-xl sm:rounded-2xl flex flex-col items-center justify-center space-y-0.5 transition shadow-lg hover:scale-[1.01] active:scale-95"
+            >
+              <CheckCircle2 className="w-5 h-5 sm:w-6 sm:h-6 text-blue-400 shrink-0" />
+              <span className="text-xs sm:text-sm font-extrabold uppercase tracking-wide">1. Qualified</span>
+              <span className="text-[10px] text-blue-300/80 font-medium">7-Day Follow-Up</span>
+            </button>
 
-        {/* COLLAPSIBLE PREVIOUS NOTES TRAIL */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
-          <button
-            onClick={() => setShowNotesAccordion(!showNotesAccordion)}
-            className="w-full p-4 text-left flex items-center justify-between text-xs font-semibold text-slate-300 hover:bg-slate-800/50 transition"
-          >
-            <span>Previous Call History ({leadNotes.length} notes)</span>
-            {showNotesAccordion ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
-          </button>
+            {/* 2. Phone Not Picked (Amber) */}
+            <button
+              onClick={handlePhoneNotPicked}
+              className="p-3 sm:p-3.5 bg-amber-600/15 hover:bg-amber-600/25 border-2 border-amber-500/40 hover:border-amber-400 text-amber-300 rounded-xl sm:rounded-2xl flex flex-col items-center justify-center space-y-0.5 transition shadow-lg hover:scale-[1.01] active:scale-95"
+            >
+              <PhoneMissed className="w-5 h-5 sm:w-6 sm:h-6 text-amber-400 shrink-0" />
+              <span className="text-xs sm:text-sm font-extrabold uppercase tracking-wide">2. Not Picked</span>
+              <span className="text-[10px] text-amber-300/80 font-bold">+1 → Remind Tomorrow</span>
+            </button>
 
-          {showNotesAccordion && (
-            <div className="p-4 pt-0 border-t border-slate-800 space-y-2 max-h-48 overflow-y-auto">
-              {leadNotes.length === 0 ? (
-                <p className="text-xs text-slate-500 py-2">No previous notes recorded for this patient.</p>
-              ) : (
-                leadNotes.map((n) => (
-                  <div key={n.id} className="bg-slate-950 p-3 rounded-xl border border-slate-800/80 text-xs">
-                    <div className="flex justify-between text-[10px] text-slate-400 mb-1">
-                      <span className="font-semibold text-teal-400">{n.author_name}</span>
-                      <span>{new Date(n.created_at).toLocaleTimeString()}</span>
-                    </div>
-                    <p className="text-slate-200">{n.note}</p>
-                  </div>
-                ))
-              )}
+            {/* 3. Useless Lead (Red) */}
+            <button
+              onClick={() => handleStatusSelect('useless')}
+              className="p-3 sm:p-3.5 bg-rose-600/15 hover:bg-rose-600/25 border-2 border-rose-500/40 hover:border-rose-400 text-rose-300 rounded-xl sm:rounded-2xl flex flex-col items-center justify-center space-y-0.5 transition shadow-lg hover:scale-[1.01] active:scale-95"
+            >
+              <XCircle className="w-5 h-5 sm:w-6 sm:h-6 text-rose-400 shrink-0" />
+              <span className="text-xs sm:text-sm font-extrabold uppercase tracking-wide">3. Useless</span>
+              <span className="text-[10px] text-rose-300/80 font-medium">Spam / Wrong #</span>
+            </button>
+
+            {/* 4. CONVERTED (Green Primary Target) */}
+            <button
+              onClick={() => handleStatusSelect('converted')}
+              className="p-3 sm:p-3.5 bg-emerald-500 hover:bg-emerald-400 border-2 border-emerald-400 text-slate-950 rounded-xl sm:rounded-2xl flex flex-col items-center justify-center space-y-0.5 transition shadow-xl hover:scale-[1.01] active:scale-95"
+            >
+              <Package className="w-5 h-5 sm:w-6 sm:h-6 fill-slate-950 shrink-0" />
+              <span className="text-xs sm:text-sm font-black uppercase tracking-wider">4. CONVERTED</span>
+              <span className="text-[10px] font-bold opacity-90">Paying Order Goal</span>
+            </button>
+
+          </div>
+        </section>
+
+        {/* SECTION 3: SECONDARY TOOLS & COMMUNICATION (WhatsApp, Call Notes, History) */}
+        <section className="space-y-3 pt-1">
+          
+          {/* QUICK WHATSAPP ACTIONS (AISENSY) */}
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 sm:p-4 shadow-xl">
+            <QuickWhatsAppButtons
+              lead={currentLead}
+              currentUser={currentUser}
+              onSuccess={(msg) => {
+                playNotificationChime();
+              }}
+            />
+          </div>
+
+          {/* VOICE-TO-TEXT & QUICK NOTE INPUT */}
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 sm:p-4 shadow-xl">
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center space-x-1.5">
+                <FileText className="w-4 h-4 text-teal-400" />
+                <span>Quick Call Note (Optional)</span>
+              </label>
+
+              <button
+                type="button"
+                onClick={toggleSpeechRecognition}
+                className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition ${
+                  isListening
+                    ? 'bg-rose-500 text-white animate-pulse'
+                    : 'bg-slate-800 text-slate-300 hover:text-teal-400 hover:bg-slate-700'
+                }`}
+              >
+                {isListening ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5 text-teal-400" />}
+                <span>{isListening ? 'Listening...' : 'Voice Dictate'}</span>
+              </button>
             </div>
-          )}
-        </div>
+
+            <input
+              type="text"
+              value={noteInput}
+              onChange={(e) => setNoteInput(e.target.value)}
+              placeholder="Type or speak call notes..."
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-teal-500 placeholder:text-slate-600"
+            />
+          </div>
+
+          {/* COLLAPSIBLE PREVIOUS NOTES TRAIL */}
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+            <button
+              onClick={() => setShowNotesAccordion(!showNotesAccordion)}
+              className="w-full p-3.5 text-left flex items-center justify-between text-xs font-semibold text-slate-300 hover:bg-slate-800/50 transition"
+            >
+              <span>Previous Call History ({leadNotes.length} notes)</span>
+              {showNotesAccordion ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+            </button>
+
+            {showNotesAccordion && (
+              <div className="p-3.5 pt-0 border-t border-slate-800 space-y-2 max-h-48 overflow-y-auto">
+                {leadNotes.length === 0 ? (
+                  <p className="text-xs text-slate-500 py-2">No previous notes recorded for this patient.</p>
+                ) : (
+                  leadNotes.map((n) => (
+                    <div key={n.id} className="bg-slate-950 p-3 rounded-xl border border-slate-800/80 text-xs">
+                      <div className="flex justify-between text-[10px] text-slate-400 mb-1">
+                        <span className="font-semibold text-teal-400">{n.author_name}</span>
+                        <span>{new Date(n.created_at).toLocaleTimeString()}</span>
+                      </div>
+                      <p className="text-slate-200">{n.note}</p>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+
+        </section>
 
       </main>
 
-      {/* BOTTOM PACE BAR & STAT STRIP */}
-      <footer className="bg-slate-900 border-t border-slate-800 p-4 sticky bottom-0 z-40">
-        <div className="max-w-3xl mx-auto flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      {/* BOTTOM PACE BAR & STAT STRIP (PINNED / STICKY AT BOTTOM) */}
+      <footer className="bg-slate-900/95 backdrop-blur-md border-t border-slate-800 px-4 py-3 sticky bottom-0 z-40 shadow-2xl">
+        <div className="max-w-4xl mx-auto flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
           
           <div className="flex-1">
             <div className="flex justify-between text-xs mb-1 font-mono">
               <span className="text-slate-400">Daily Dialing Goal Pace</span>
               <span className="text-teal-400 font-bold">{completedCallsToday} / {dailyTarget} calls</span>
             </div>
-            <div className="w-full h-2.5 bg-slate-950 rounded-full overflow-hidden border border-slate-800">
+            <div className="w-full h-2 bg-slate-950 rounded-full overflow-hidden border border-slate-800">
               <div
                 className="h-full bg-teal-500 rounded-full transition-all duration-300"
                 style={{ width: `${Math.min(100, Math.round((completedCallsToday / dailyTarget) * 100))}%` }}

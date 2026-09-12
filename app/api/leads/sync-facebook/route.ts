@@ -90,6 +90,33 @@ export async function POST(req: Request) {
       }
     }
 
+    // Strategy D: Query Page fields for leadgen_forms
+    if (forms.length === 0) {
+      try {
+        const pageFieldRes = await fetch(`https://graph.facebook.com/v20.0/${targetPageId}?fields=leadgen_forms{id,name,status}&access_token=${effectiveToken}`);
+        const pageFieldJson = await pageFieldRes.json();
+        if (pageFieldJson.leadgen_forms?.data && Array.isArray(pageFieldJson.leadgen_forms.data)) {
+          forms.push(...pageFieldJson.leadgen_forms.data);
+        }
+      } catch (e) {
+        console.warn('[Facebook Sync] Strategy D failed:', e);
+      }
+    }
+
+    // Check if custom formId was provided in body or query params
+    let customFormId: string | null = null;
+    try {
+      const body = await req.json();
+      if (body?.formId) customFormId = body.formId;
+    } catch {}
+    if (!customFormId) {
+      const url = new URL(req.url);
+      customFormId = url.searchParams.get('formId');
+    }
+    if (customFormId) {
+      forms.push({ id: customFormId, name: `FB Form ${customFormId}` });
+    }
+
     // Deduplicate forms by id
     const formsMap = new Map();
     forms.forEach((f) => formsMap.set(f.id, f));

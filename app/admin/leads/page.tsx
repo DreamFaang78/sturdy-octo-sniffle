@@ -147,17 +147,27 @@ export default function AdminLeadsPage() {
   const [isSyncing, setIsSyncing] = useState(false);
 
   // Sync leads from Facebook Graph API (Yesterday 6 PM to Present)
-  const handleSyncFacebookLeads = async () => {
+  const handleSyncFacebookLeads = async (customFormId?: string) => {
     setIsSyncing(true);
     showToast('Connecting to Facebook Graph API & fetching leads since yesterday 6:00 PM...');
     try {
-      const res = await fetch('/api/leads/sync-facebook', { method: 'POST' });
+      const url = customFormId ? `/api/leads/sync-facebook?formId=${customFormId}` : '/api/leads/sync-facebook';
+      const res = await fetch(url, { method: 'POST' });
       const json = await res.json();
       if (res.ok) {
         await loadLeads();
-        showToast(json.message || 'Successfully synced leads from Facebook!');
+        showToast(json.message || `Successfully synced ${json.stats?.leadsInserted || 0} leads from Facebook!`);
       } else {
-        showToast(`Sync notice: ${json.error || 'Failed to sync from Facebook'}`);
+        const errorMsg = json.error || 'Failed to sync from Facebook';
+        showToast(`Sync notice: ${errorMsg}`);
+        
+        // If listing forms failed due to permissions, prompt user for Form ID directly
+        if (!customFormId && confirm(`${errorMsg}\n\nWould you like to sync by entering your Facebook Form ID directly?`)) {
+          const formIdInput = prompt('Enter your Facebook Lead Form ID (found in Meta Ads Manager / Instant Forms):');
+          if (formIdInput && formIdInput.trim()) {
+            await handleSyncFacebookLeads(formIdInput.trim());
+          }
+        }
       }
     } catch (e) {
       showToast('Network error while syncing leads from Facebook.');

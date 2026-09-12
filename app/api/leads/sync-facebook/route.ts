@@ -3,47 +3,75 @@ import { createAdminClient } from '@/lib/supabase/admin';
 
 export async function POST(req: Request) {
   try {
-    const accessToken = process.env.META_ACCESS_TOKEN;
-    const pageId = process.env.META_PAGE_ID || '61590905900938';
+    const rawToken = process.env.META_ACCESS_TOKEN;
+    const targetPageId = process.env.META_PAGE_ID || '61590905900938';
 
-    if (!accessToken || accessToken.startsWith('demo_')) {
+    if (!rawToken || rawToken.startsWith('demo_')) {
       return NextResponse.json(
-        { error: 'META_ACCESS_TOKEN is missing or not configured in environment variables.' },
+        { error: 'META_ACCESS_TOKEN is missing or not configured in Vercel environment variables.' },
         { status: 400 }
       );
     }
 
     // Default to yesterday at 18:00 (6:00 PM) local IST (UTC+5:30)
-    // 6 PM IST yesterday in unix timestamp
     const now = new Date();
     const yesterday6pm = new Date(now.getTime() - 24 * 3600 * 1000);
     yesterday6pm.setHours(18, 0, 0, 0);
-    const sinceTimestamp = Math.floor(yesterday6pm.getTime() / 1000);
+    const sinceTimestampMs = yesterday6pm.getTime();
 
     const supabase = createAdminClient();
 
-    // 1. Fetch all Lead Ad Forms associated with the Facebook Page
-    const formsUrl = `https://graph.facebook.com/v20.0/${pageId}/leadgen_forms?access_token=${accessToken}&fields=id,name,status`;
+    // 1. Resolve effective Page Access Token (check /me/accounts in case a User token was provided)
+    let effectiveToken = rawToken;
+    try {
+      const accountsRes = await fetch(`https://graph.facebook.com/v20.0/me/accounts?access_token=${rawToken}`);
+      const accountsJson = await accountsRes.json();
+      if (accountsJson.data && Array.isArray(accountsJson.data)) {
+        const pageMatch = accountsJson.data.find(
+          (p: any) => p.id === targetPageId || (p.name && p.name.toLowerCase().includes('healing house'))
+        );
+        if (pageMatch?.access_token) {
+          effectiveToken = pageMatch.access_token;
+          console.log(`[Facebook Sync] Successfully resolved Page Access Token for ${pageMatch.name} (${pageMatch.id})`);
+        }
+      }
+    } catch (tokenErr) {
+      console.warn('[Facebook Sync] Token resolution fallback:', tokenErr);
+    }
+
+    // 2. Fetch Lead Ad Forms for the Page
+    let forms: any[] = [];
+    const formsUrl = `https://graph.facebook.com/v20.0/${targetPageId}/leadgen_forms?access_token=${effectiveToken}&fields=id,name,status`;
     const formsRes = await fetch(formsUrl);
     const formsData = await formsRes.json();
 
-    if (formsData.error) {
-      console.error('[Facebook Sync API Error - Forms]:', formsData.error);
-      return NextResponse.json(
-        { error: formsData.error.message || 'Failed to fetch Lead Forms from Facebook Graph API.' },
-        { status: 502 }
-      );
+    if (formsData.data) {
+      forms = formsData.data;
+    } else if (formsData.error) {
+      console.warn('[Facebook Sync] forms endpoint notice:', formsData.error);
+      const meFormsRes = await fetch(`https://graph.facebook.com/v20.0/me/leadgen_forms?access_token=${effectiveToken}&fields=id,name,status`);
+      const meFormsJson = await meFormsRes.json();
+      if (meFormsJson.data) {
+        forms = meFormsJson.data;
+      } else {
+        return NextResponse.json(
+          { 
+            error: `Meta API error: ${formsData.error.message || 'Permissions issue'}. Please ensure your Meta Access Token has 'leads_retrieval' and 'pages_read_engagement' permissions.`,
+            details: formsData.error 
+          },
+          { status: 502 }
+        );
+      }
     }
 
-    const forms = formsData.data || [];
     let totalFound = 0;
     let totalInserted = 0;
     let totalDuplicates = 0;
     const insertedLeads: any[] = [];
 
-    // 2. Iterate through each Lead Form and fetch leads created since yesterday 6 PM
+    // 3. Iterate through each Lead Form and fetch leads
     for (const form of forms) {
-      const leadsUrl = `https://graph.facebook.com/v20.0/${form.id}/leads?fields=id,created_time,field_data&filtering=[{"field":"time_created","operator":"GREATER_THAN","value":${sinceTimestamp}}]&access_token=${accessToken}&limit=100`;
+      const leadsUrl = `https://graph.facebook.com/v20.0/${form.id}/leads?fields=id,created_time,field_data&limit=100&access_token=${effectiveToken}`;
       
       try {
         const leadsRes = await fetch(leadsUrl);
@@ -51,6 +79,13 @@ export async function POST(req: Request) {
         const fbLeads = leadsJson.data || [];
 
         for (const fbLead of fbLeads) {
+          const leadCreatedTimeMs = new Date(fbLead.created_time).getTime();
+          
+          // Filter: only include leads created after yesterday 6 PM
+          if (leadCreatedTimeMs < sinceTimestampMs) {
+            continue;
+          }
+
           totalFound++;
           const leadgenId = fbLead.id;
           let name = '';
@@ -123,7 +158,7 @@ export async function POST(req: Request) {
             totalInserted++;
             insertedLeads.push(inserted);
 
-            // Also record in ingestion log
+            // Record in ingestion log
             await supabase.from('lead_ingestion_log').insert({
               meta_lead_id: leadgenId,
               name,
@@ -141,7 +176,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       success: true,
-      message: `Historical sync complete. ${totalInserted} new leads imported from Facebook.`,
+      message: `Historical sync complete! ${totalInserted} leads imported from Facebook.`,
       stats: {
         formsChecked: forms.length,
         leadsFound: totalFound,

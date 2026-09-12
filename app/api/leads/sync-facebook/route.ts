@@ -39,29 +39,71 @@ export async function POST(req: Request) {
       console.warn('[Facebook Sync] Token resolution fallback:', tokenErr);
     }
 
-    // 2. Fetch Lead Ad Forms for the Page
+    // 2. Fetch Lead Ad Forms using multiple strategies (Page, Ad Account, User)
     let forms: any[] = [];
-    const formsUrl = `https://graph.facebook.com/v20.0/${targetPageId}/leadgen_forms?access_token=${effectiveToken}&fields=id,name,status`;
-    const formsRes = await fetch(formsUrl);
-    const formsData = await formsRes.json();
+    const adAccountId = process.env.META_AD_ACCOUNT_ID || '1351765630146416';
+    let lastError: any = null;
 
-    if (formsData.data) {
-      forms = formsData.data;
-    } else if (formsData.error) {
-      console.warn('[Facebook Sync] forms endpoint notice:', formsData.error);
-      const meFormsRes = await fetch(`https://graph.facebook.com/v20.0/me/leadgen_forms?access_token=${effectiveToken}&fields=id,name,status`);
-      const meFormsJson = await meFormsRes.json();
-      if (meFormsJson.data) {
-        forms = meFormsJson.data;
-      } else {
-        return NextResponse.json(
-          { 
-            error: `Meta API error: ${formsData.error.message || 'Permissions issue'}. Please ensure your Meta Access Token has 'leads_retrieval' and 'pages_read_engagement' permissions.`,
-            details: formsData.error 
-          },
-          { status: 502 }
-        );
+    // Strategy A: Query Page leadgen_forms
+    try {
+      const pageFormsRes = await fetch(`https://graph.facebook.com/v20.0/${targetPageId}/leadgen_forms?access_token=${effectiveToken}&fields=id,name,status`);
+      const pageFormsJson = await pageFormsRes.json();
+      if (pageFormsJson.data && Array.isArray(pageFormsJson.data) && pageFormsJson.data.length > 0) {
+        forms.push(...pageFormsJson.data);
+      } else if (pageFormsJson.error) {
+        lastError = pageFormsJson.error;
       }
+    } catch (e) {
+      console.warn('[Facebook Sync] Strategy A failed:', e);
+    }
+
+    // Strategy B: Query Ad Account leadgen_forms
+    if (forms.length === 0) {
+      try {
+        const adAccountUrl = `https://graph.facebook.com/v20.0/act_${adAccountId}/leadgen_forms?access_token=${rawToken}&fields=id,name,status`;
+        const adAccRes = await fetch(adAccountUrl);
+        const adAccJson = await adAccRes.json();
+        if (adAccJson.data && Array.isArray(adAccJson.data) && adAccJson.data.length > 0) {
+          forms.push(...adAccJson.data);
+        } else if (adAccJson.error) {
+          lastError = adAccJson.error;
+        }
+      } catch (e) {
+        console.warn('[Facebook Sync] Strategy B failed:', e);
+      }
+    }
+
+    // Strategy C: Query /me/adaccounts for attached forms
+    if (forms.length === 0) {
+      try {
+        const meAdAccRes = await fetch(`https://graph.facebook.com/v20.0/me/adaccounts?fields=id,name,leadgen_forms{id,name,status}&access_token=${rawToken}`);
+        const meAdAccJson = await meAdAccRes.json();
+        if (meAdAccJson.data && Array.isArray(meAdAccJson.data)) {
+          for (const acc of meAdAccJson.data) {
+            if (acc.leadgen_forms?.data) {
+              forms.push(...acc.leadgen_forms.data);
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('[Facebook Sync] Strategy C failed:', e);
+      }
+    }
+
+    // Deduplicate forms by id
+    const formsMap = new Map();
+    forms.forEach((f) => formsMap.set(f.id, f));
+    forms = Array.from(formsMap.values());
+
+    if (forms.length === 0 && lastError) {
+      console.error('[Facebook Sync API Error - Forms]:', lastError);
+      return NextResponse.json(
+        { 
+          error: `Facebook API: ${lastError.message || 'Permissions restricted'}. Error Code: ${lastError.code || 'unknown'}`,
+          details: lastError 
+        },
+        { status: 502 }
+      );
     }
 
     let totalFound = 0;

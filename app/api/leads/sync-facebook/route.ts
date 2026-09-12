@@ -39,70 +39,6 @@ export async function POST(req: Request) {
       console.warn('[Facebook Sync] Token resolution fallback:', tokenErr);
     }
 
-    // 2. Fetch Lead Ad Forms using multiple strategies (Page, Ad Account, User)
-    let forms: any[] = [];
-    const adAccountId = process.env.META_AD_ACCOUNT_ID || '1351765630146416';
-    let lastError: any = null;
-
-    // Strategy A: Query Page leadgen_forms
-    try {
-      const pageFormsRes = await fetch(`https://graph.facebook.com/v20.0/${targetPageId}/leadgen_forms?access_token=${effectiveToken}&fields=id,name,status`);
-      const pageFormsJson = await pageFormsRes.json();
-      if (pageFormsJson.data && Array.isArray(pageFormsJson.data) && pageFormsJson.data.length > 0) {
-        forms.push(...pageFormsJson.data);
-      } else if (pageFormsJson.error) {
-        lastError = pageFormsJson.error;
-      }
-    } catch (e) {
-      console.warn('[Facebook Sync] Strategy A failed:', e);
-    }
-
-    // Strategy B: Query Ad Account leadgen_forms
-    if (forms.length === 0) {
-      try {
-        const adAccountUrl = `https://graph.facebook.com/v20.0/act_${adAccountId}/leadgen_forms?access_token=${rawToken}&fields=id,name,status`;
-        const adAccRes = await fetch(adAccountUrl);
-        const adAccJson = await adAccRes.json();
-        if (adAccJson.data && Array.isArray(adAccJson.data) && adAccJson.data.length > 0) {
-          forms.push(...adAccJson.data);
-        } else if (adAccJson.error) {
-          lastError = adAccJson.error;
-        }
-      } catch (e) {
-        console.warn('[Facebook Sync] Strategy B failed:', e);
-      }
-    }
-
-    // Strategy C: Query /me/adaccounts for attached forms
-    if (forms.length === 0) {
-      try {
-        const meAdAccRes = await fetch(`https://graph.facebook.com/v20.0/me/adaccounts?fields=id,name,leadgen_forms{id,name,status}&access_token=${rawToken}`);
-        const meAdAccJson = await meAdAccRes.json();
-        if (meAdAccJson.data && Array.isArray(meAdAccJson.data)) {
-          for (const acc of meAdAccJson.data) {
-            if (acc.leadgen_forms?.data) {
-              forms.push(...acc.leadgen_forms.data);
-            }
-          }
-        }
-      } catch (e) {
-        console.warn('[Facebook Sync] Strategy C failed:', e);
-      }
-    }
-
-    // Strategy D: Query Page fields for leadgen_forms
-    if (forms.length === 0) {
-      try {
-        const pageFieldRes = await fetch(`https://graph.facebook.com/v20.0/${targetPageId}?fields=leadgen_forms{id,name,status}&access_token=${effectiveToken}`);
-        const pageFieldJson = await pageFieldRes.json();
-        if (pageFieldJson.leadgen_forms?.data && Array.isArray(pageFieldJson.leadgen_forms.data)) {
-          forms.push(...pageFieldJson.leadgen_forms.data);
-        }
-      } catch (e) {
-        console.warn('[Facebook Sync] Strategy D failed:', e);
-      }
-    }
-
     // Check if custom formId was provided in body or query params
     let customFormId: string | null = null;
     try {
@@ -113,8 +49,72 @@ export async function POST(req: Request) {
       const url = new URL(req.url);
       customFormId = url.searchParams.get('formId');
     }
+
+    let forms: any[] = [];
+    const adAccountId = process.env.META_AD_ACCOUNT_ID || '1351765630146416';
+    let lastError: any = null;
+
     if (customFormId) {
       forms.push({ id: customFormId, name: `FB Form ${customFormId}` });
+    } else {
+      // Strategy A: Query Page leadgen_forms
+      try {
+        const pageFormsRes = await fetch(`https://graph.facebook.com/v20.0/${targetPageId}/leadgen_forms?access_token=${effectiveToken}&fields=id,name,status`);
+        const pageFormsJson = await pageFormsRes.json();
+        if (pageFormsJson.data && Array.isArray(pageFormsJson.data) && pageFormsJson.data.length > 0) {
+          forms.push(...pageFormsJson.data);
+        } else if (pageFormsJson.error) {
+          lastError = pageFormsJson.error;
+        }
+      } catch (e) {
+        console.warn('[Facebook Sync] Strategy A failed:', e);
+      }
+
+      // Strategy B: Query Ad Account leadgen_forms
+      if (forms.length === 0) {
+        try {
+          const adAccountUrl = `https://graph.facebook.com/v20.0/act_${adAccountId}/leadgen_forms?access_token=${rawToken}&fields=id,name,status`;
+          const adAccRes = await fetch(adAccountUrl);
+          const adAccJson = await adAccRes.json();
+          if (adAccJson.data && Array.isArray(adAccJson.data) && adAccJson.data.length > 0) {
+            forms.push(...adAccJson.data);
+          } else if (adAccJson.error) {
+            lastError = adAccJson.error;
+          }
+        } catch (e) {
+          console.warn('[Facebook Sync] Strategy B failed:', e);
+        }
+      }
+
+      // Strategy C: Query /me/adaccounts for attached forms
+      if (forms.length === 0) {
+        try {
+          const meAdAccRes = await fetch(`https://graph.facebook.com/v20.0/me/adaccounts?fields=id,name,leadgen_forms{id,name,status}&access_token=${rawToken}`);
+          const meAdAccJson = await meAdAccRes.json();
+          if (meAdAccJson.data && Array.isArray(meAdAccJson.data)) {
+            for (const acc of meAdAccJson.data) {
+              if (acc.leadgen_forms?.data) {
+                forms.push(...acc.leadgen_forms.data);
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('[Facebook Sync] Strategy C failed:', e);
+        }
+      }
+
+      // Strategy D: Query Page fields for leadgen_forms
+      if (forms.length === 0) {
+        try {
+          const pageFieldRes = await fetch(`https://graph.facebook.com/v20.0/${targetPageId}?fields=leadgen_forms{id,name,status}&access_token=${effectiveToken}`);
+          const pageFieldJson = await pageFieldRes.json();
+          if (pageFieldJson.leadgen_forms?.data && Array.isArray(pageFieldJson.leadgen_forms.data)) {
+            forms.push(...pageFieldJson.leadgen_forms.data);
+          }
+        } catch (e) {
+          console.warn('[Facebook Sync] Strategy D failed:', e);
+        }
+      }
     }
 
     // Deduplicate forms by id
@@ -145,6 +145,18 @@ export async function POST(req: Request) {
       try {
         const leadsRes = await fetch(leadsUrl);
         const leadsJson = await leadsRes.json();
+
+        if (leadsJson.error) {
+          console.error(`[Facebook Leads API Error for Form ${form.id}]:`, leadsJson.error);
+          return NextResponse.json(
+            {
+              error: `Facebook Leads API Error: ${leadsJson.error.message || 'Failed to fetch form submissions'} (Code: ${leadsJson.error.code})`,
+              details: leadsJson.error,
+            },
+            { status: 502 }
+          );
+        }
+
         const fbLeads = leadsJson.data || [];
 
         for (const fbLead of fbLeads) {

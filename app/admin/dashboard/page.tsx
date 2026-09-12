@@ -61,9 +61,7 @@ export default function AdminDashboardPage() {
 
     const loadLeads = async () => {
       const data = await fetchLeadsFromApi();
-      if (data.length > 0) {
-        setLeads(data);
-      }
+      setLeads(data);
     };
 
     loadLeads();

@@ -12,7 +12,8 @@ import {
   Save, 
   Globe,
   Copy,
-  Info
+  Info,
+  ChevronRight
 } from 'lucide-react';
 import { Profile, WhatsAppTemplate } from '@/lib/types';
 import { INITIAL_PROFILES, INITIAL_WHATSAPP_TEMPLATES } from '@/lib/mockDb';
@@ -155,46 +156,59 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          {/* 2. WhatsApp Business Templates Store Manager */}
+          {/* 2. AiSensy WhatsApp API & Templates Manager */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div className="flex items-center space-x-2">
                 <div className="p-2 bg-emerald-500/20 text-emerald-400 rounded-xl">
                   <MessageSquare className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-white text-base">WhatsApp Business Templates Store</h3>
-                  <p className="text-xs text-slate-400">Manage prewritten click-to-WhatsApp message templates with {`{{name}}`} substitution.</p>
+                  <h3 className="font-bold text-white text-base">AiSensy WhatsApp API & Templates</h3>
+                  <p className="text-xs text-slate-400">Configure AiSensy REST API keys and manage the 3 1-tap message templates.</p>
                 </div>
               </div>
-              <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 text-xs font-mono font-semibold rounded border border-emerald-500/20">
-                wa.me (₹0 API Cost)
-              </span>
+              <a
+                href="/admin/whatsapp"
+                className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold rounded-xl transition shadow shrink-0"
+              >
+                <span>Edit 3 Templates & Logs</span>
+                <ChevronRight className="w-4 h-4" />
+              </a>
             </div>
 
-            <div className="space-y-4 pt-2">
-              {templates.map((tmpl, idx) => (
-                <div key={tmpl.key} className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-teal-400 uppercase tracking-wider">{tmpl.label}</span>
-                    <span className="text-[10px] text-slate-500 font-mono">key: {tmpl.key}</span>
-                  </div>
-                  <textarea
-                    rows={2}
-                    value={tmpl.text_template}
-                    onChange={(e) => {
-                      const updated = [...templates];
-                      updated[idx].text_template = e.target.value;
-                      setTemplates(updated);
-                    }}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-teal-500 resize-none font-mono"
+            <div className="space-y-3 pt-2">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-slate-300 mb-1">AiSensy API Key (`AISENSY_API_KEY`)</label>
+                  <input
+                    type="password"
+                    placeholder="Enter AiSensy Project API Key"
+                    defaultValue="demo_aisensy_api_key_2026"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-teal-500 font-mono"
                   />
-                  <div className="text-[10px] text-slate-400 flex items-center justify-between">
-                    <span>Supports placeholders: <code className="text-teal-300 font-mono">{`{{name}}`}</code>, <code className="text-teal-300 font-mono">{`{{campaign}}`}</code></span>
-                    <span className="text-slate-500 font-mono">Length: {tmpl.text_template.length} chars</span>
-                  </div>
                 </div>
-              ))}
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-300 mb-1">AiSensy API Endpoint</label>
+                  <input
+                    type="text"
+                    readOnly
+                    value="https://backend.aisensy.com/campaign/t1/api/v2"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-400 font-mono focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl flex items-center justify-between text-xs text-slate-300">
+                <div className="flex items-center space-x-2">
+                  <Info className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>The 3 caller templates (Not Picked, Follow-Up, Order Confirmed) can be edited with live preview on the dedicated WhatsApp page.</span>
+                </div>
+                <a href="/admin/whatsapp" className="text-emerald-400 font-bold hover:underline whitespace-nowrap ml-2">
+                  Open WhatsApp Manager →
+                </a>
+              </div>
             </div>
           </div>
 

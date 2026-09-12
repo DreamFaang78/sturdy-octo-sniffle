@@ -28,6 +28,7 @@ import { Lead, LeadNote, LeadStatus, OrderStatus, UselessReason, Profile } from 
 import { INITIAL_LEADS, INITIAL_NOTES, INITIAL_PROFILES } from '@/lib/mockDb';
 import { calculateFollowUpSchedule } from '@/lib/followup';
 import PatientCareChecklist from '@/components/PatientCareChecklist';
+import QuickWhatsAppButtons from '@/components/QuickWhatsAppButtons';
 
 
 export default function LeadDetailPage() {
@@ -349,6 +350,16 @@ export default function LeadDetailPage() {
             </button>
 
           </div>
+        </div>
+
+        {/* QUICK WHATSAPP ACTIONS (AISENSY) */}
+        <div className="mt-6 bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
+          <QuickWhatsAppButtons
+            lead={lead}
+            currentUser={currentUser}
+            onSuccess={(msg) => showToast(msg)}
+            onError={(err) => showToast(err)}
+          />
         </div>
 
         {/* ORDER & RTO SECTION (IF STATUS = CONVERTED) */}

@@ -36,6 +36,7 @@ import {
   getFollowUpUrgency 
 } from '@/lib/notifications';
 import { createClient } from '@/lib/supabase/client';
+import QuickWhatsAppButtons from '@/components/QuickWhatsAppButtons';
 
 async function fetchLeadsFromApi(): Promise<Lead[]> {
   try {
@@ -467,6 +468,17 @@ export default function HighSpeedCallerDialer() {
             </div>
           </button>
 
+        </div>
+
+        {/* QUICK WHATSAPP ACTIONS (AISENSY) */}
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl">
+          <QuickWhatsAppButtons
+            lead={currentLead}
+            currentUser={currentUser}
+            onSuccess={(msg) => {
+              playNotificationChime();
+            }}
+          />
         </div>
 
         {/* VOICE-TO-TEXT & QUICK NOTE INPUT */}

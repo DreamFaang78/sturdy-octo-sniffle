@@ -66,6 +66,29 @@ export interface StatusHistory {
   changed_at: string;
 }
 
+export type WhatsAppTemplateType = 'not_picked' | 'follow_up' | 'order_confirmed';
+
+export interface WhatsAppTemplateRecord {
+  id?: string;
+  template_type: WhatsAppTemplateType;
+  message_text: string;
+  updated_by?: string | null;
+  updated_at?: string;
+}
+
+export interface WhatsAppLog {
+  id: string;
+  lead_id?: string | null;
+  caller_id?: string | null;
+  template_type: WhatsAppTemplateType;
+  final_message_sent: string;
+  status: 'sent' | 'failed';
+  aisensy_response?: any;
+  created_at: string;
+  lead_name?: string;
+  lead_phone?: string;
+}
+
 export interface WhatsAppTemplate {
   key: string;
   label: string;

@@ -13,7 +13,8 @@ import {
   PhoneCall,
   Flame,
   PlusCircle,
-  Activity
+  Activity,
+  MessageSquare
 } from 'lucide-react';
 
 import DialpadWidget from '@/components/DialpadWidget';
@@ -121,6 +122,18 @@ export default function Navbar({ userRole = 'admin', userName = 'Agam Singh', on
                   >
                     <UserCheck className="w-4 h-4" />
                     <span>Callers</span>
+                  </Link>
+
+                  <Link
+                    href="/admin/whatsapp"
+                    className={`flex items-center space-x-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                      pathname === '/admin/whatsapp'
+                        ? 'bg-slate-800 text-teal-400 font-semibold'
+                        : 'text-slate-300 hover:bg-slate-800/60 hover:text-white'
+                    }`}
+                  >
+                    <MessageSquare className="w-4 h-4 text-emerald-400" />
+                    <span>WhatsApp</span>
                   </Link>
 
                   <Link

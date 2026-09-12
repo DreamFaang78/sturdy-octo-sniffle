@@ -408,18 +408,43 @@ export default function HighSpeedCallerDialer() {
             </a>
           </div>
 
-          {/* Form Answers Pill */}
-          {currentLead.form_answers && Object.keys(currentLead.form_answers).length > 0 && (
-            <div className="mt-5 p-3 bg-slate-950 border border-slate-800 rounded-xl text-left text-xs text-slate-300 space-y-1 max-w-md mx-auto">
-              <div className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider mb-1">Inquiry Data</div>
-              {Object.entries(currentLead.form_answers).map(([k, v]) => (
-                <div key={k} className="flex justify-between">
-                  <span className="text-slate-400">{k}:</span>
-                  <span className="font-semibold text-white">{String(v)}</span>
+          {/* Form Answers Pill - Filtered for Caller Focus */}
+          {(() => {
+            const answers = currentLead.form_answers || {};
+
+            // 1. City
+            const cityKey = Object.keys(answers).find((k) => k.toLowerCase() === 'city' || k.toLowerCase().includes('city'));
+            const cityVal = cityKey ? answers[cityKey] : (currentLead as any).city;
+
+            // 2. Age (आयु_(age))
+            const ageKey = Object.keys(answers).find((k) => k.includes('आयु') || k.toLowerCase().includes('age'));
+            const ageVal = ageKey ? answers[ageKey] : null;
+
+            // 3. Symptom duration (आप_इस_समस्या_से_कब_से_परेशान_हैं?_*)
+            const symptomKey = Object.keys(answers).find((k) => k.includes('समस्या') || k.includes('परेशान') || k.toLowerCase().includes('duration'));
+            const symptomVal = symptomKey ? answers[symptomKey] : null;
+
+            const displayRows: { label: string; value: string }[] = [];
+            if (cityVal) displayRows.push({ label: cityKey || 'city', value: String(cityVal) });
+            if (ageVal && ageKey) displayRows.push({ label: ageKey, value: String(ageVal) });
+            if (symptomVal && symptomKey) displayRows.push({ label: symptomKey, value: String(symptomVal) });
+
+            if (displayRows.length === 0) return null;
+
+            return (
+              <div className="mt-5 p-3.5 bg-slate-950 border border-slate-800 rounded-xl text-left text-xs text-slate-300 space-y-1.5 max-w-md mx-auto shadow-inner">
+                <div className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider mb-1">
+                  Inquiry Data
                 </div>
-              ))}
-            </div>
-          )}
+                {displayRows.map((row, idx) => (
+                  <div key={idx} className="flex justify-between items-start gap-4">
+                    <span className="text-slate-400 font-mono text-xs shrink-0">{row.label}:</span>
+                    <span className="font-semibold text-white text-right text-xs break-words">{row.value}</span>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
 
         </div>
 

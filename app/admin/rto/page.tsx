@@ -36,7 +36,20 @@ export default function RtoTrackingPage() {
         } catch (e) {}
       }
     }
+    fetchLeads();
   }, []);
+
+  const fetchLeads = async () => {
+    try {
+      const res = await fetch('/api/leads');
+      if (res.ok) {
+        const data = await res.json();
+        setLeads(data.leads || []);
+      }
+    } catch (err) {
+      console.error('Failed to load leads for RTO:', err);
+    }
+  };
 
   const showToast = (msg: string) => {
     setToastMsg(msg);
@@ -46,21 +59,39 @@ export default function RtoTrackingPage() {
   // Converted leads with RTO flag or order_status = 'rto'
   const rtoLeads = leads.filter((l) => l.order_status === 'rto' || l.status === 'converted');
 
-  const handleResolveRto = (leadId: string, newOrderStatus: 'shipped' | 'delivered') => {
-    const updated = leads.map((l) => {
-      if (l.id === leadId) {
-        return {
-          ...l,
+  const handleResolveRto = async (leadId: string, newOrderStatus: 'shipped' | 'delivered') => {
+    try {
+      const res = await fetch('/api/leads', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: leadId,
           order_status: newOrderStatus,
           rto_reason: null,
-          updated_at: new Date().toISOString(),
-        };
-      }
-      return l;
-    });
+          updated_at: new Date().toISOString()
+        })
+      });
 
-    setLeads(updated);
-    showToast(`RTO resolved! Order re-marked as ${newOrderStatus.toUpperCase()}`);
+      if (!res.ok) throw new Error('Failed to update RTO status');
+
+      const updated = leads.map((l) => {
+        if (l.id === leadId) {
+          return {
+            ...l,
+            order_status: newOrderStatus,
+            rto_reason: null,
+            updated_at: new Date().toISOString(),
+          };
+        }
+        return l;
+      });
+
+      setLeads(updated);
+      showToast(`RTO resolved! Order re-marked as ${newOrderStatus.toUpperCase()}`);
+    } catch (err) {
+      console.error('Error resolving RTO:', err);
+      showToast('Error updating order status');
+    }
   };
 
   return (

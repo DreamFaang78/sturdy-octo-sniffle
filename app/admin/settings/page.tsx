@@ -34,6 +34,8 @@ export default function SettingsPage() {
 
   const webhookUrl = typeof window !== 'undefined' ? `${window.location.origin}/api/webhooks/facebook` : 'https://your-domain.vercel.app/api/webhooks/facebook';
 
+  const [apiSecret, setApiSecret] = useState('demo_aisensy_api_key_2026'); // Keep track of the aisensy api key input value
+
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const stored = localStorage.getItem('hommed_user_session');
@@ -46,6 +48,28 @@ export default function SettingsPage() {
         } catch (e) {}
       }
     }
+    
+    // Fetch settings from API
+    const fetchSettings = async () => {
+      try {
+        const res = await fetch('/api/settings');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.meta_webhook_config) {
+            setMetaVerifyToken(data.meta_webhook_config.verify_token || '');
+            setMetaAppSecret(data.meta_webhook_config.app_secret || '');
+            // We'll leave metaAccessToken if it's missing just for demo mapping
+          }
+          if (data.aisensy_config) {
+            setApiSecret(data.aisensy_config.api_key || 'demo_aisensy_api_key_2026');
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch settings:', error);
+      }
+    };
+    
+    fetchSettings();
   }, []);
 
   const showToast = (msg: string) => {
@@ -60,9 +84,36 @@ export default function SettingsPage() {
     }
   };
 
-  const handleSaveSettings = (e: React.FormEvent) => {
+  const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
-    showToast('CRM Settings saved successfully.');
+    
+    try {
+      const payload = {
+        meta_webhook_config: {
+          verify_token: metaVerifyToken,
+          app_secret: metaAppSecret,
+          auto_assign: autoAssignOnIngest
+        },
+        aisensy_config: {
+          api_key: apiSecret,
+          campaign_name: 'welcome_lead',
+          enabled: true
+        }
+      };
+
+      const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (!res.ok) throw new Error('Failed to save settings');
+      
+      showToast('CRM Settings saved successfully to Database.');
+    } catch (error) {
+      console.error(error);
+      showToast('Error saving settings.');
+    }
   };
 
   return (
@@ -184,7 +235,8 @@ export default function SettingsPage() {
                   <input
                     type="password"
                     placeholder="Enter AiSensy Project API Key"
-                    defaultValue="demo_aisensy_api_key_2026"
+                    value={apiSecret}
+                    onChange={(e) => setApiSecret(e.target.value)}
                     className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-teal-500 font-mono"
                   />
                 </div>

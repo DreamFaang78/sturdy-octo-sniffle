@@ -193,3 +193,37 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
+
+export async function POST(req: Request) {
+  try {
+    const body = await req.json();
+    const supabase = createAdminClient();
+
+    const newLead = {
+      name: body.name,
+      phone: body.phone,
+      source: body.source || 'Manual Entry',
+      campaign: body.campaign,
+      status: body.status || 'unassigned',
+      form_answers: body.form_answers || {},
+      phone_attempt_count: 0,
+      follow_up_stage: 0,
+      is_cold: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    const { data, error } = await supabase
+      .from('leads')
+      .insert(newLead)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    return NextResponse.json(data, { status: 201 });
+  } catch (err: any) {
+    console.error('[API /leads POST] Error:', err);
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
+}

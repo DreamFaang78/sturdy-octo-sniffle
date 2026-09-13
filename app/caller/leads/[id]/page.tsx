@@ -281,6 +281,18 @@ export default function LeadDetailPage() {
     };
 
     setLead(updated);
+    
+    fetch('/api/leads', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: updated.id,
+        order_status: updated.order_status,
+        rto_reason: updated.rto_reason,
+        rto_flagged_at: updated.rto_flagged_at,
+        updated_at: updated.updated_at,
+      }),
+    }).catch((e) => console.error('Error saving order status:', e));
 
     const autoNote: LeadNote = {
       id: `note-order-${Date.now()}`,
@@ -292,6 +304,18 @@ export default function LeadDetailPage() {
     };
 
     setNotes([autoNote, ...notes]);
+    
+    fetch('/api/notes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        leadId: lead.id,
+        note: autoNote.note,
+        authorId: currentUser.id,
+        authorName: currentUser.name,
+      }),
+    }).catch((e) => console.error('Error saving order status note:', e));
+
     showToast(`Order status updated to ${newOrderStatus.toUpperCase()}`);
   };
 

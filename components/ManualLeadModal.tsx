@@ -22,14 +22,13 @@ export default function ManualLeadModal({ isOpen, onClose, onLeadAdded }: Manual
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || !phone) return;
 
     setLoading(true);
 
-    const newLead: Lead = {
-      id: `lead-man-${Date.now()}`,
+    const newLeadData = {
       name,
       phone: phone.startsWith('+91') ? phone : `+91${phone.replace(/[^0-9]/g, '')}`,
       source,
@@ -39,23 +38,35 @@ export default function ManualLeadModal({ isOpen, onClose, onLeadAdded }: Manual
         'City / Location': city || 'Not specified',
         'Initial Note': notes,
       },
-      status: 'unassigned',
-      assigned_to: null,
-      phone_attempt_count: 0,
-      follow_up_stage: 0,
-      is_cold: false,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      status: 'unassigned'
     };
 
-    setTimeout(() => {
-      onLeadAdded(newLead);
-      setLoading(false);
+    try {
+      const response = await fetch('/api/leads', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(newLeadData),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to create lead');
+      }
+
+      const savedLead = await response.json();
+
+      onLeadAdded(savedLead);
       setName('');
       setPhone('');
       setNotes('');
       onClose();
-    }, 400);
+    } catch (error) {
+      console.error('Error adding manual lead:', error);
+      alert('Failed to add lead. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (

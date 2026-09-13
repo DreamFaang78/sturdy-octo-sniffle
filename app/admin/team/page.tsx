@@ -40,64 +40,97 @@ export default function TeamManagementPage() {
           }
         } catch (e) {}
       }
-      setProfiles(getSavedProfiles());
     }
+    fetchProfiles();
   }, []);
+
+  const fetchProfiles = async () => {
+    try {
+      const res = await fetch('/api/team');
+      if (!res.ok) throw new Error('Failed to fetch profiles');
+      const data = await res.json();
+      setProfiles(data);
+    } catch (error) {
+      console.error(error);
+      showToast('Error loading team members');
+    }
+  };
 
   const showToast = (msg: string) => {
     setToastMsg(msg);
     setTimeout(() => setToastMsg(null), 3000);
   };
 
-  const handleToggleActive = (profileId: string) => {
-    const updated = profiles.map((p) => {
-      if (p.id === profileId) {
-        return { ...p, is_active: !p.is_active };
-      }
-      return p;
-    });
-    setProfiles(updated);
-    saveProfiles(updated);
-    showToast('Caller user status updated.');
+  const handleToggleActive = async (profileId: string) => {
+    const profile = profiles.find(p => p.id === profileId);
+    if (!profile) return;
+    
+    try {
+      const res = await fetch(`/api/team/${profileId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_active: !profile.is_active })
+      });
+      if (!res.ok) throw new Error('Failed to update status');
+      
+      const updatedProfile = await res.json();
+      setProfiles(profiles.map(p => p.id === profileId ? updatedProfile : p));
+      showToast('Caller user status updated.');
+    } catch (error) {
+      console.error(error);
+      showToast('Error updating status');
+    }
   };
 
-  const handleDeleteCaller = (profileId: string, profileName: string) => {
+  const handleDeleteCaller = async (profileId: string, profileName: string) => {
     if (!confirm(`Are you sure you want to remove ${profileName}?`)) return;
-    const updated = profiles.filter((p) => p.id !== profileId);
-    setProfiles(updated);
-    saveProfiles(updated);
-    showToast(`Removed ${profileName}`);
+    
+    try {
+      const res = await fetch(`/api/team/${profileId}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to delete user');
+      
+      setProfiles(profiles.filter(p => p.id !== profileId));
+      showToast(`Removed ${profileName}`);
+    } catch (error) {
+      console.error(error);
+      showToast('Error deleting user');
+    }
   };
 
   const handleResetDefaults = () => {
-    if (!confirm('Reset team members to default 2 profiles (Admin & Default Caller)?')) return;
-    setProfiles(INITIAL_PROFILES);
-    saveProfiles(INITIAL_PROFILES);
-    showToast('Reset to default profiles');
+    alert('Reset defaults is disabled in production to protect data.');
   };
 
-  const handleCreateCaller = (e: React.FormEvent) => {
+  const handleCreateCaller = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newName || !newEmail) return;
 
-    const created: Profile = {
-      id: `user-caller-${Date.now()}`,
-      name: newName,
-      email: newEmail,
-      phone: newPhone || '+919999988888',
-      role: 'caller',
-      is_active: true,
-      created_at: new Date().toISOString(),
-    };
-
-    const updated = [...profiles, created];
-    setProfiles(updated);
-    saveProfiles(updated);
-    setNewName('');
-    setNewEmail('');
-    setNewPhone('');
-    setIsModalOpen(false);
-    showToast(`Caller account created for ${created.name}!`);
+    try {
+      const res = await fetch('/api/team', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: newName,
+          email: newEmail,
+          phone: newPhone || '+919999988888',
+          role: 'caller',
+          password: newPassword
+        })
+      });
+      
+      if (!res.ok) throw new Error('Failed to create user');
+      const created = await res.json();
+      
+      setProfiles([...profiles, created]);
+      setNewName('');
+      setNewEmail('');
+      setNewPhone('');
+      setIsModalOpen(false);
+      showToast(`Caller account created for ${created.name}!`);
+    } catch (error) {
+      console.error(error);
+      showToast('Error creating user');
+    }
   };
 
   return (

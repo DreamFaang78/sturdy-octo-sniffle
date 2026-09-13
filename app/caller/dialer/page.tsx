@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import Navbar from '@/components/Navbar';
 import { 
@@ -80,8 +80,14 @@ export default function HighSpeedCallerDialer() {
     toastMessage: string;
   } | null>(null);
 
-  const [completedCallsToday, setCompletedCallsToday] = useState(18);
+  const [sessionCompletedCalls, setSessionCompletedCalls] = useState(0);
+  const initialLeadNavigatedRef = useRef(false);
   const dailyTarget = 50;
+
+  // Calculate contacted leads today from DB + current session increment
+  const todayDateStr = new Date().toISOString().split('T')[0];
+  const dbContactedToday = leads.filter((l) => l.last_contacted_at && l.last_contacted_at.startsWith(todayDateStr)).length;
+  const completedCallsToday = dbContactedToday + sessionCompletedCalls;
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -143,17 +149,22 @@ export default function HighSpeedCallerDialer() {
     return () => { supabase.removeChannel(channel); };
   }, [currentUser.id]);
 
-  // Handle URL query parameter leadId (direct jump)
+  // Handle URL query parameter leadId (direct jump on initial load only)
   useEffect(() => {
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && !initialLeadNavigatedRef.current && leads.length > 0) {
       const params = new URLSearchParams(window.location.search);
       const targetLeadId = params.get('leadId');
-      if (targetLeadId && leads.length > 0) {
+      if (targetLeadId) {
         const targetQueue = leads.filter((l) => l.assigned_to === currentUser.id);
-        const idx = targetQueue.findIndex((l) => l.id === targetLeadId);
+        const queueToSearch = targetQueue.length > 0 ? targetQueue : leads;
+        const idx = queueToSearch.findIndex((l) => l.id === targetLeadId);
         if (idx !== -1) {
           setCurrentIndex(idx);
+          initialLeadNavigatedRef.current = true;
+          window.history.replaceState({}, '', window.location.pathname);
         }
+      } else {
+        initialLeadNavigatedRef.current = true;
       }
     }
   }, [leads, currentUser.id]);
@@ -384,7 +395,7 @@ export default function HighSpeedCallerDialer() {
       }),
     }).catch((e) => console.error('Error persisting lead update:', e));
 
-    setCompletedCallsToday((prev) => prev + 1);
+    setSessionCompletedCalls((prev) => prev + 1);
 
     if (currentIndex < activeQueue.length - 1) {
       setCurrentIndex((prev) => prev + 1);
@@ -463,7 +474,7 @@ export default function HighSpeedCallerDialer() {
 
     setLeads(restoredLeads);
     setCurrentIndex(undoState.previousIndex);
-    setCompletedCallsToday((prev) => Math.max(0, prev - 1));
+    setSessionCompletedCalls((prev) => Math.max(0, prev - 1));
     setUndoState(null);
   };
 
@@ -834,12 +845,14 @@ export default function HighSpeedCallerDialer() {
             <div>
               <span className="text-slate-400">Converted: </span>
               <span className="text-emerald-400 font-bold">
-                {myQueue.filter((l) => l.status === 'converted').length}
+                {activeQueue.filter((l) => l.status === 'converted').length}
               </span>
             </div>
             <div>
               <span className="text-slate-400">Queue Left: </span>
-              <span className="text-amber-400 font-bold">{myQueue.length - currentIndex}</span>
+              <span className="text-amber-400 font-bold">
+                {Math.max(0, activeQueue.length - (currentIndex + 1))}
+              </span>
             </div>
           </div>
 

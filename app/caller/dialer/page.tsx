@@ -158,9 +158,10 @@ export default function HighSpeedCallerDialer() {
     }
   }, [leads, currentUser.id]);
 
-  // Filter leads assigned to current caller
+  // Filter leads assigned to current caller (fall back to all returned leads if queue empty)
   const myQueue = leads.filter((l) => l.assigned_to === currentUser.id);
-  const currentLead = myQueue[currentIndex] || myQueue[0] || leads[0];
+  const activeQueue = myQueue.length > 0 ? myQueue : leads;
+  const currentLead = activeQueue[currentIndex] || activeQueue[0] || leads[0];
   const leadNotes = currentLead ? notes.filter((n) => n.lead_id === currentLead.id) : [];
 
   // Fetch notes specifically for the active lead from live DB
@@ -371,15 +372,21 @@ export default function HighSpeedCallerDialer() {
       body: JSON.stringify({
         id: updatedLead.id,
         status: updatedLead.status,
+        phone_attempt_count: updatedLead.phone_attempt_count,
+        last_contacted_at: updatedLead.last_contacted_at,
         next_follow_up_date: updatedLead.next_follow_up_date,
         next_follow_up_time: updatedLead.next_follow_up_time,
+        follow_up_stage: updatedLead.follow_up_stage,
+        is_cold: updatedLead.is_cold,
+        useless_reason: updatedLead.useless_reason,
+        useless_note: updatedLead.useless_note,
         order_status: updatedLead.order_status,
       }),
     }).catch((e) => console.error('Error persisting lead update:', e));
 
     setCompletedCallsToday((prev) => prev + 1);
 
-    if (currentIndex < myQueue.length - 1) {
+    if (currentIndex < activeQueue.length - 1) {
       setCurrentIndex((prev) => prev + 1);
     } else {
       setCurrentIndex(0);
@@ -440,7 +447,7 @@ export default function HighSpeedCallerDialer() {
   };
 
   const handleSkipLead = () => {
-    if (currentIndex < myQueue.length - 1) {
+    if (currentIndex < activeQueue.length - 1) {
       setCurrentIndex((prev) => prev + 1);
     } else {
       setCurrentIndex(0);
@@ -509,7 +516,7 @@ export default function HighSpeedCallerDialer() {
             </button>
 
             <span className="text-xs font-mono text-slate-400 whitespace-nowrap">
-              <span className="text-white font-bold">{currentIndex + 1}</span>/{myQueue.length}
+              <span className="text-white font-bold">{currentIndex + 1}</span>/{activeQueue.length}
             </span>
 
             <button

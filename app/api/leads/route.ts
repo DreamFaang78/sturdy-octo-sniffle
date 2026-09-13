@@ -122,7 +122,23 @@ export async function PATCH(req: Request) {
     }
 
     // Single lead update
-    const { id, assigned_to, status, next_follow_up_date, next_follow_up_time, order_status, rto_reason } = body;
+    const { 
+      id, 
+      assigned_to, 
+      status, 
+      phone_attempt_count,
+      last_contacted_at,
+      next_follow_up_date, 
+      next_follow_up_time, 
+      follow_up_stage,
+      is_cold,
+      useless_reason,
+      useless_note,
+      order_status, 
+      rto_reason,
+      rto_flagged_at
+    } = body;
+
     if (!id) {
       return NextResponse.json({ error: 'Missing lead id' }, { status: 400 });
     }
@@ -131,6 +147,7 @@ export async function PATCH(req: Request) {
     const mergedFormAnswers = {
       ...(currentLead?.form_answers || {}),
       ...(assigned_to !== undefined ? { assigned_to: assigned_to || null, assigned_caller: assigned_to || null } : {}),
+      ...(next_follow_up_time !== undefined ? { next_follow_up_time } : {}),
     };
 
     const updates: Record<string, any> = { 
@@ -145,10 +162,16 @@ export async function PATCH(req: Request) {
       }
     }
     if (status !== undefined) updates.status = status;
+    if (phone_attempt_count !== undefined) updates.phone_attempt_count = phone_attempt_count;
+    if (last_contacted_at !== undefined) updates.last_contacted_at = last_contacted_at;
     if (next_follow_up_date !== undefined) updates.next_follow_up_date = next_follow_up_date;
-    if (next_follow_up_time !== undefined) updates.next_follow_up_time = next_follow_up_time;
+    if (follow_up_stage !== undefined) updates.follow_up_stage = follow_up_stage;
+    if (is_cold !== undefined) updates.is_cold = is_cold;
+    if (useless_reason !== undefined) updates.useless_reason = useless_reason;
+    if (useless_note !== undefined) updates.useless_note = useless_note;
     if (order_status !== undefined) updates.order_status = order_status;
     if (rto_reason !== undefined) updates.rto_reason = rto_reason;
+    if (rto_flagged_at !== undefined) updates.rto_flagged_at = rto_flagged_at;
 
     const { data, error } = await supabase
       .from('leads')
@@ -157,7 +180,10 @@ export async function PATCH(req: Request) {
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error('[API /leads PATCH] Supabase update error:', error);
+      throw error;
+    }
 
     return NextResponse.json({ success: true, lead: data });
   } catch (err: any) {

@@ -93,8 +93,27 @@ export default function HighSpeedCallerDialer() {
   } | null>(null);
 
   const [sessionCompletedCalls, setSessionCompletedCalls] = useState(0);
-  const initialLeadNavigatedRef = useRef(false);
+  const restoredCallerIdRef = useRef<string | null>(null);
   const dailyTarget = 50;
+
+  // Persist caller's current lead position to both localStorage (instant client sync) and Supabase settings (durable server state)
+  const persistQueuePosition = (leadId: string, callerId: string = currentUser.id) => {
+    if (!leadId || !callerId) return;
+
+    // 1. Instant local storage cache
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(`hommed_dialer_pos_${callerId}`, leadId);
+      } catch (e) {}
+    }
+
+    // 2. Server-side persistence in Supabase
+    fetch('/api/caller/position', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ callerId, leadId }),
+    }).catch((err) => console.error('[Dialer] Failed to persist position to Supabase:', err));
+  };
 
   // Calculate contacted leads today from DB + current session increment
   const todayDateStr = new Date().toISOString().split('T')[0];
@@ -161,24 +180,79 @@ export default function HighSpeedCallerDialer() {
     return () => { supabase.removeChannel(channel); };
   }, [currentUser.id]);
 
-  // Handle URL query parameter leadId (direct jump on initial load only)
+  // Restore caller's saved queue position on load / refresh (from URL param, Supabase DB, or local cache)
   useEffect(() => {
-    if (typeof window !== 'undefined' && !initialLeadNavigatedRef.current && leads.length > 0) {
-      const params = new URLSearchParams(window.location.search);
-      const targetLeadId = params.get('leadId');
+    if (leads.length === 0) return;
+    if (restoredCallerIdRef.current === currentUser.id) return;
+
+    const restoreQueuePosition = async () => {
+      const callerAssigned = leads.filter((l) => l.assigned_to === currentUser.id);
+      const queueToSearch = callerAssigned.length > 0 ? callerAssigned : leads;
+
+      // 1. Check URL query param leadId first (e.g. direct link from leads table or reminder)
+      const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+      const urlLeadId = params?.get('leadId');
+
+      if (urlLeadId) {
+        const idx = queueToSearch.findIndex((l) => l.id === urlLeadId);
+        if (idx !== -1) {
+          setCurrentIndex(idx);
+          setNoteInput(draftNotes[queueToSearch[idx].id] || '');
+          restoredCallerIdRef.current = currentUser.id;
+          window.history.replaceState({}, '', window.location.pathname);
+          persistQueuePosition(queueToSearch[idx].id, currentUser.id);
+          return;
+        }
+      }
+
+      // 2. Fetch server-side saved current_lead_id from Supabase
+      let serverLeadId: string | null = null;
+      try {
+        const res = await fetch(`/api/caller/position?callerId=${encodeURIComponent(currentUser.id)}`);
+        if (res.ok) {
+          const json = await res.json();
+          if (json.leadId) {
+            serverLeadId = json.leadId;
+          }
+        }
+      } catch (err) {
+        console.error('[Dialer] Error fetching position from Supabase:', err);
+      }
+
+      // 3. Fallback to localStorage cache
+      let cachedLeadId: string | null = null;
+      if (typeof window !== 'undefined') {
+        try {
+          cachedLeadId = localStorage.getItem(`hommed_dialer_pos_${currentUser.id}`);
+        } catch (e) {}
+      }
+
+      const targetLeadId = serverLeadId || cachedLeadId;
+
       if (targetLeadId) {
-        const targetQueue = leads.filter((l) => l.assigned_to === currentUser.id);
-        const queueToSearch = targetQueue.length > 0 ? targetQueue : leads;
         const idx = queueToSearch.findIndex((l) => l.id === targetLeadId);
         if (idx !== -1) {
           setCurrentIndex(idx);
-          initialLeadNavigatedRef.current = true;
-          window.history.replaceState({}, '', window.location.pathname);
+          setNoteInput(draftNotes[queueToSearch[idx].id] || '');
+        } else {
+          // Graceful fallback: If saved lead no longer exists or was reassigned, start at first lead in queue
+          setCurrentIndex(0);
+          if (queueToSearch[0]?.id) {
+            persistQueuePosition(queueToSearch[0].id, currentUser.id);
+          }
         }
       } else {
-        initialLeadNavigatedRef.current = true;
+        // First-ever visit: start on lead 0 and persist initial position
+        setCurrentIndex(0);
+        if (queueToSearch[0]?.id) {
+          persistQueuePosition(queueToSearch[0].id, currentUser.id);
+        }
       }
-    }
+
+      restoredCallerIdRef.current = currentUser.id;
+    };
+
+    restoreQueuePosition();
   }, [leads, currentUser.id]);
 
   // Filter leads assigned to current caller (fall back to all returned leads if queue empty)
@@ -315,6 +389,9 @@ export default function HighSpeedCallerDialer() {
       const targetLead = activeQueue[prevIdx];
       setCurrentIndex(prevIdx);
       setNoteInput(draftNotes[targetLead?.id] || '');
+      if (targetLead?.id) {
+        persistQueuePosition(targetLead.id, currentUser.id);
+      }
     }
   };
 
@@ -327,6 +404,9 @@ export default function HighSpeedCallerDialer() {
       const targetLead = activeQueue[nextIdx];
       setCurrentIndex(nextIdx);
       setNoteInput(draftNotes[targetLead?.id] || '');
+      if (targetLead?.id) {
+        persistQueuePosition(targetLead.id, currentUser.id);
+      }
     }
   };
 
@@ -492,6 +572,9 @@ export default function HighSpeedCallerDialer() {
     const nextLeadObj = activeQueue[nextIdx];
     setCurrentIndex(nextIdx);
     setNoteInput(draftNotes[nextLeadObj?.id] || '');
+    if (nextLeadObj?.id) {
+      persistQueuePosition(nextLeadObj.id, currentUser.id);
+    }
   };
 
   const handleStatusSelect = (status: LeadStatus) => {
@@ -670,6 +753,9 @@ export default function HighSpeedCallerDialer() {
     const targetLead = activeQueue[nextIdx];
     setCurrentIndex(nextIdx);
     setNoteInput(draftNotes[targetLead?.id] || '');
+    if (targetLead?.id) {
+      persistQueuePosition(targetLead.id, currentUser.id);
+    }
   };
 
   const handleUndo = () => {
@@ -685,6 +771,9 @@ export default function HighSpeedCallerDialer() {
     setNoteInput(draftNotes[targetLead?.id] || '');
     setSessionCompletedCalls((prev) => Math.max(0, prev - 1));
     setUndoState(null);
+    if (targetLead?.id) {
+      persistQueuePosition(targetLead.id, currentUser.id);
+    }
   };
 
   if (!currentLead) return null;
@@ -1364,6 +1453,7 @@ export default function HighSpeedCallerDialer() {
           const idx = myQueue.findIndex((l) => l.id === leadId);
           if (idx !== -1) {
             setCurrentIndex(idx);
+            persistQueuePosition(leadId, currentUser.id);
           }
         }}
       />

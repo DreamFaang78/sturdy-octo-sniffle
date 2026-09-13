@@ -24,7 +24,7 @@ export function distributeLeadsEvenly(
       assigned_to: caller.id,
       assigned_at: now,
       assignee: caller,
-      status: 'qualified',
+      status: lead.status || 'unassigned',
       updated_at: now,
     };
     

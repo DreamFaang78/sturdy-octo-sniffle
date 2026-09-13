@@ -98,7 +98,7 @@ export async function PATCH(req: Request) {
         const assignedVal = update.assigned_to;
         const validUuid = assignedVal && isUuid(assignedVal) ? assignedVal : null;
 
-        const { data: currentLead } = await supabase.from('leads').select('form_answers').eq('id', update.id).single();
+        const { data: currentLead } = await supabase.from('leads').select('status, form_answers').eq('id', update.id).single();
         const mergedFormAnswers = {
           ...(currentLead?.form_answers || {}),
           assigned_to: assignedVal || null,
@@ -106,7 +106,7 @@ export async function PATCH(req: Request) {
         };
 
         const updatePayload: Record<string, any> = {
-          status: update.status || (assignedVal ? 'qualified' : 'unassigned'),
+          status: update.status || currentLead?.status || 'unassigned',
           form_answers: mergedFormAnswers,
           updated_at: new Date().toISOString(),
         };

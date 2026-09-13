@@ -214,7 +214,7 @@ export default function AdminLeadsPage() {
         id: l.id,
         assigned_to: l.assigned_to,
         assigned_at: l.assigned_at,
-        status: 'qualified',
+        status: l.status || 'unassigned',
       }));
 
       await fetch('/api/leads', {
@@ -232,14 +232,16 @@ export default function AdminLeadsPage() {
   // Reassign single lead with Supabase persistence
   const handleReassignLead = async (leadId: string, callerId: string) => {
     const caller = callers.find((c) => c.id === callerId);
+    let targetStatus = 'unassigned';
     const updated = leads.map((l) => {
       if (l.id === leadId) {
+        targetStatus = l.status || 'unassigned';
         return {
           ...l,
           assigned_to: callerId || null,
           assigned_at: callerId ? new Date().toISOString() : null,
           assignee: caller || null,
-          status: (callerId ? 'qualified' : 'unassigned') as any,
+          status: l.status || 'unassigned',
           updated_at: new Date().toISOString(),
         };
       }
@@ -255,7 +257,7 @@ export default function AdminLeadsPage() {
         body: JSON.stringify({
           id: leadId,
           assigned_to: callerId || null,
-          status: callerId ? 'qualified' : 'unassigned',
+          status: targetStatus,
         }),
       });
 

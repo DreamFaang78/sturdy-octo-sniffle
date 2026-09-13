@@ -18,13 +18,16 @@ import {
   ArrowLeft, 
   Clock, 
   Flame, 
-  Sparkles,
-  FileText,
-  AlertCircle,
-  Bell,
-  BellRing,
-  LogOut,
-  Calendar
+  Sparkles, 
+  FileText, 
+  AlertCircle, 
+  Bell, 
+  BellRing, 
+  LogOut, 
+  Calendar,
+  Plus,
+  Send,
+  Loader2
 } from 'lucide-react';
 import { Lead, LeadNote, LeadStatus, Profile, UselessReason, CallReminder } from '@/lib/types';
 import { INITIAL_PROFILES } from '@/lib/mockDb';
@@ -56,6 +59,9 @@ export default function HighSpeedCallerDialer() {
   const [currentUser, setCurrentUser] = useState<Profile>(INITIAL_PROFILES[1]); // Caller Team
   const [leads, setLeads] = useState<Lead[]>([]);
   const [notes, setNotes] = useState<LeadNote[]>([]);
+  const [isSavingNote, setIsSavingNote] = useState(false);
+  const [notesLoading, setNotesLoading] = useState(false);
+  const [noteSavedFeedback, setNoteSavedFeedback] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [showNotesAccordion, setShowNotesAccordion] = useState(false);
   const [noteInput, setNoteInput] = useState('');
@@ -152,6 +158,63 @@ export default function HighSpeedCallerDialer() {
     }
   }, [leads, currentUser.id]);
 
+  // Filter leads assigned to current caller
+  const myQueue = leads.filter((l) => l.assigned_to === currentUser.id);
+  const currentLead = myQueue[currentIndex] || myQueue[0] || leads[0];
+  const leadNotes = currentLead ? notes.filter((n) => n.lead_id === currentLead.id) : [];
+
+  // Fetch notes specifically for the active lead from live DB
+  const fetchNotesForLead = async (leadId: string) => {
+    if (!leadId) return;
+    try {
+      setNotesLoading(true);
+      const res = await fetch(`/api/notes?leadId=${encodeURIComponent(leadId)}`, { cache: 'no-store' });
+      if (res.ok) {
+        const json = await res.json();
+        const fetchedNotes: LeadNote[] = json.notes || [];
+        setNotes((prev) => {
+          const otherNotes = prev.filter((n) => n.lead_id !== leadId);
+          return [...fetchedNotes, ...otherNotes];
+        });
+      }
+    } catch (err) {
+      console.error('[Speed Dial] Error fetching notes for lead:', err);
+    } finally {
+      setNotesLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (currentLead?.id) {
+      fetchNotesForLead(currentLead.id);
+    }
+  }, [currentLead?.id]);
+
+  // Subscribe to real-time changes on lead_notes for current lead
+  useEffect(() => {
+    if (!currentLead?.id) return;
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`caller-dialer-notes-${currentLead.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'lead_notes',
+          filter: `lead_id=eq.${currentLead.id}`,
+        },
+        () => {
+          fetchNotesForLead(currentLead.id);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [currentLead?.id]);
+
   const enableNotifications = async () => {
     const granted = await requestNotificationPermission();
     setNotificationsAllowed(granted);
@@ -160,11 +223,6 @@ export default function HighSpeedCallerDialer() {
       sendBrowserNotification('Hommed CRM Notifications Enabled!', 'You will receive real-time pop-up alerts for urgent follow-up calls.');
     }
   };
-
-  // Filter leads assigned to current caller
-  const myQueue = leads.filter((l) => l.assigned_to === currentUser.id);
-  const currentLead = myQueue[currentIndex] || myQueue[0] || leads[0];
-  const leadNotes = currentLead ? notes.filter((n) => n.lead_id === currentLead.id) : [];
 
   // Active callback reminder for current lead
   const activeReminder = currentLead ? reminders.find((r) => r.lead_id === currentLead.id && r.status === 'pending') : null;
@@ -209,6 +267,57 @@ export default function HighSpeedCallerDialer() {
     }
   };
 
+  // Handle manual saving of Quick Call Note for current lead
+  const handleSaveNote = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const trimmed = noteInput.trim();
+    if (!trimmed || !currentLead?.id || isSavingNote) return;
+
+    setIsSavingNote(true);
+    const tempId = `temp-note-${Date.now()}`;
+    const optimisticNote: LeadNote = {
+      id: tempId,
+      lead_id: currentLead.id,
+      author_id: currentUser.id,
+      author_name: currentUser.name,
+      note: trimmed,
+      created_at: new Date().toISOString(),
+    };
+
+    // Optimistically add to state immediately
+    setNotes((prev) => [optimisticNote, ...prev]);
+    setNoteInput('');
+    setNoteSavedFeedback(true);
+    setTimeout(() => setNoteSavedFeedback(false), 2500);
+
+    try {
+      const res = await fetch('/api/notes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          leadId: currentLead.id,
+          note: trimmed,
+          authorId: currentUser.id,
+          authorName: currentUser.name,
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.note) {
+          setNotes((prev) => prev.map((n) => (n.id === tempId ? data.note : n)));
+        }
+      } else {
+        fetchNotesForLead(currentLead.id);
+      }
+    } catch (err) {
+      console.error('Failed to save note:', err);
+      fetchNotesForLead(currentLead.id);
+    } finally {
+      setIsSavingNote(false);
+    }
+  };
+
   // Auto-advance helper
   const advanceToNextLead = (updatedLead: Lead, actionLabel: string) => {
     const previousIndex = currentIndex;
@@ -228,18 +337,45 @@ export default function HighSpeedCallerDialer() {
     const nextLeads = leads.map((l) => (l.id === updatedLead.id ? updatedLead : l));
     setLeads(nextLeads);
 
-    if (noteInput.trim()) {
-      const noteObj: LeadNote = {
-        id: `note-speed-${Date.now()}`,
+    // Save note if caller entered text before clicking outcome
+    if (noteInput.trim() && currentLead?.id) {
+      const trimmed = noteInput.trim();
+      const tempId = `temp-note-${Date.now()}`;
+      const optimisticNote: LeadNote = {
+        id: tempId,
         lead_id: currentLead.id,
         author_id: currentUser.id,
         author_name: currentUser.name,
-        note: noteInput.trim(),
+        note: trimmed,
         created_at: new Date().toISOString(),
       };
-      setNotes([noteObj, ...notes]);
+      setNotes((prev) => [optimisticNote, ...prev]);
       setNoteInput('');
+
+      fetch('/api/notes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          leadId: currentLead.id,
+          note: trimmed,
+          authorId: currentUser.id,
+          authorName: currentUser.name,
+        }),
+      }).catch((e) => console.error('Error saving note on advance:', e));
     }
+
+    // Persist lead status update to backend DB
+    fetch('/api/leads', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: updatedLead.id,
+        status: updatedLead.status,
+        next_follow_up_date: updatedLead.next_follow_up_date,
+        next_follow_up_time: updatedLead.next_follow_up_time,
+        order_status: updatedLead.order_status,
+      }),
+    }).catch((e) => console.error('Error persisting lead update:', e));
 
     setCompletedCallsToday((prev) => prev + 1);
 
@@ -586,6 +722,12 @@ export default function HighSpeedCallerDialer() {
               <label className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center space-x-1.5">
                 <FileText className="w-4 h-4 text-teal-400" />
                 <span>Quick Call Note (Optional)</span>
+                {noteSavedFeedback && (
+                  <span className="text-[11px] font-bold text-emerald-400 flex items-center space-x-1 ml-2 animate-in fade-in">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Saved!</span>
+                  </span>
+                )}
               </label>
 
               <button
@@ -602,22 +744,40 @@ export default function HighSpeedCallerDialer() {
               </button>
             </div>
 
-            <input
-              type="text"
-              value={noteInput}
-              onChange={(e) => setNoteInput(e.target.value)}
-              placeholder="Type or speak call notes..."
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-teal-500 placeholder:text-slate-600"
-            />
+            <form onSubmit={handleSaveNote} className="flex gap-2">
+              <input
+                type="text"
+                value={noteInput}
+                onChange={(e) => setNoteInput(e.target.value)}
+                placeholder="Type or speak call notes..."
+                className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-teal-500 placeholder:text-slate-600"
+              />
+              <button
+                type="submit"
+                disabled={!noteInput.trim() || isSavingNote}
+                className="px-3.5 py-2.5 bg-teal-500 hover:bg-teal-400 disabled:opacity-40 disabled:hover:bg-teal-500 text-slate-950 rounded-xl text-xs font-bold transition shrink-0 flex items-center space-x-1.5 shadow"
+              >
+                {isSavingNote ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Send className="w-3.5 h-3.5" />
+                )}
+                <span>Save Note</span>
+              </button>
+            </form>
           </div>
 
           {/* COLLAPSIBLE PREVIOUS NOTES TRAIL */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
             <button
+              type="button"
               onClick={() => setShowNotesAccordion(!showNotesAccordion)}
               className="w-full p-3.5 text-left flex items-center justify-between text-xs font-semibold text-slate-300 hover:bg-slate-800/50 transition"
             >
-              <span>Previous Call History ({leadNotes.length} notes)</span>
+              <span className="flex items-center space-x-2">
+                <span>Previous Call History ({leadNotes.length} notes)</span>
+                {notesLoading && <Loader2 className="w-3 h-3 text-teal-400 animate-spin" />}
+              </span>
               {showNotesAccordion ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
             </button>
 
@@ -627,12 +787,14 @@ export default function HighSpeedCallerDialer() {
                   <p className="text-xs text-slate-500 py-2">No previous notes recorded for this patient.</p>
                 ) : (
                   leadNotes.map((n) => (
-                    <div key={n.id} className="bg-slate-950 p-3 rounded-xl border border-slate-800/80 text-xs">
-                      <div className="flex justify-between text-[10px] text-slate-400 mb-1">
+                    <div key={n.id} className="bg-slate-950 p-3 rounded-xl border border-slate-800/80 text-xs space-y-1">
+                      <div className="flex justify-between items-center text-[10px] text-slate-400">
                         <span className="font-semibold text-teal-400">{n.author_name}</span>
-                        <span>{new Date(n.created_at).toLocaleTimeString()}</span>
+                        <span className="font-mono">
+                          {new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {new Date(n.created_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
+                        </span>
                       </div>
-                      <p className="text-slate-200">{n.note}</p>
+                      <p className="text-slate-200 leading-relaxed">{n.note}</p>
                     </div>
                   ))
                 )}

@@ -61,10 +61,34 @@ export default function LeadDetailPage() {
       }
     }
 
-    const foundLead = INITIAL_LEADS.find((l) => l.id === leadId) || INITIAL_LEADS[0];
-    setLead(foundLead);
-    const leadNotes = INITIAL_NOTES.filter((n) => n.lead_id === foundLead.id);
-    setNotes(leadNotes);
+    const loadLeadAndNotes = async () => {
+      try {
+        const leadRes = await fetch('/api/leads', { cache: 'no-store' });
+        if (leadRes.ok) {
+          const data = await leadRes.json();
+          const foundLead = (data.leads || []).find((l: Lead) => l.id === leadId) || INITIAL_LEADS.find((l) => l.id === leadId) || INITIAL_LEADS[0];
+          if (foundLead) setLead(foundLead);
+        }
+        
+        const notesRes = await fetch(`/api/notes?leadId=${encodeURIComponent(leadId)}`, { cache: 'no-store' });
+        if (notesRes.ok) {
+          const notesData = await notesRes.json();
+          if (notesData.notes && notesData.notes.length > 0) {
+            setNotes(notesData.notes);
+            return;
+          }
+        }
+      } catch (err) {
+        console.error('Error loading lead/notes in detail page:', err);
+      }
+
+      const foundLead = INITIAL_LEADS.find((l) => l.id === leadId) || INITIAL_LEADS[0];
+      setLead(foundLead);
+      const leadNotes = INITIAL_NOTES.filter((n) => n.lead_id === foundLead?.id);
+      setNotes(leadNotes);
+    };
+
+    loadLeadAndNotes();
   }, [leadId]);
 
   if (!lead) return null;
@@ -191,22 +215,45 @@ export default function LeadDetailPage() {
   };
 
   // Submit Caller Note
-  const handleAddNote = (e: React.FormEvent) => {
+  const handleAddNote = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newNote.trim()) return;
+    const trimmed = newNote.trim();
+    if (!trimmed || !lead?.id) return;
 
+    const tempId = `note-user-${Date.now()}`;
     const noteObj: LeadNote = {
-      id: `note-user-${Date.now()}`,
+      id: tempId,
       lead_id: lead.id,
       author_id: currentUser.id,
       author_name: currentUser.name,
-      note: newNote.trim(),
+      note: trimmed,
       created_at: new Date().toISOString(),
     };
 
     setNotes([noteObj, ...notes]);
     setNewNote('');
     showToast('Call note added to lead timeline.');
+
+    try {
+      const res = await fetch('/api/notes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          leadId: lead.id,
+          note: trimmed,
+          authorId: currentUser.id,
+          authorName: currentUser.name,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.note) {
+          setNotes((prev) => prev.map((n) => (n.id === tempId ? data.note : n)));
+        }
+      }
+    } catch (err) {
+      console.error('Error adding note:', err);
+    }
   };
 
   return (

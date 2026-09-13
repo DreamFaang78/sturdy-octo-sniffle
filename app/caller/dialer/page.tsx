@@ -543,6 +543,11 @@ export default function HighSpeedCallerDialer() {
       return copy;
     });
 
+    // Optimistically update local leads state so attempt count & status are immediately updated
+    setLeads((prev) =>
+      prev.map((l) => (l.id === updatedLead.id ? updatedLead : l))
+    );
+
     // Persist lead status update to backend DB
     fetch('/api/leads', {
       method: 'PATCH',
@@ -559,6 +564,7 @@ export default function HighSpeedCallerDialer() {
         useless_reason: updatedLead.useless_reason,
         useless_note: updatedLead.useless_note,
         order_status: updatedLead.order_status,
+        form_answers: updatedLead.form_answers,
       }),
     }).catch((e) => console.error('Error persisting lead update:', e));
 
@@ -583,11 +589,13 @@ export default function HighSpeedCallerDialer() {
       return;
     }
 
-    const schedule = calculateFollowUpSchedule(status, currentLead.follow_up_stage, currentLead.phone_attempt_count);
+    const attempts = (currentLead.phone_attempt_count || 0) + 1;
+    const schedule = calculateFollowUpSchedule(status, currentLead.follow_up_stage, attempts);
 
     const updated: Lead = {
       ...currentLead,
       status,
+      phone_attempt_count: attempts,
       next_follow_up_date: schedule.next_follow_up_date,
       next_follow_up_time: '10:30 AM',
       follow_up_stage: schedule.follow_up_stage,
@@ -599,12 +607,12 @@ export default function HighSpeedCallerDialer() {
     advanceToNextLead(
       updated, 
       status.replace(/_/g, ' '),
-      `Call Outcome: Status marked as ${status.replace(/_/g, ' ').toUpperCase()}.${schedule.next_follow_up_date ? ` Follow-up scheduled for ${schedule.next_follow_up_date}.` : ''}`
+      `Call Outcome: Status marked as ${status.replace(/_/g, ' ').toUpperCase()} (Attempt #${attempts}).${schedule.next_follow_up_date ? ` Follow-up scheduled for ${schedule.next_follow_up_date}.` : ''}`
     );
   };
 
   const handlePhoneNotPicked = () => {
-    const attempts = currentLead.phone_attempt_count + 1;
+    const attempts = (currentLead.phone_attempt_count || 0) + 1;
     const tomorrowStr = new Date(Date.now() + 86400000).toISOString().split('T')[0];
 
     const updated: Lead = {
@@ -625,12 +633,15 @@ export default function HighSpeedCallerDialer() {
   };
 
   const handleConfirmUseless = () => {
+    const attempts = (currentLead.phone_attempt_count || 0) + 1;
     const updated: Lead = {
       ...currentLead,
       status: 'useless',
+      phone_attempt_count: attempts,
       useless_reason: uselessReason,
       next_follow_up_date: null,
       next_follow_up_time: null,
+      last_contacted_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
 
@@ -638,13 +649,13 @@ export default function HighSpeedCallerDialer() {
     advanceToNextLead(
       updated, 
       `USELESS (${uselessReason})`,
-      `Call Outcome: Marked as USELESS (${uselessReason.replace(/_/g, ' ')}).`
+      `Call Outcome: Marked as USELESS (${uselessReason.replace(/_/g, ' ')} - Attempt #${attempts}).`
     );
   };
 
   // Option A: Incoming Not Available
   const handleIncomingNotAvailable = () => {
-    const attempts = currentLead.phone_attempt_count + 1;
+    const attempts = (currentLead.phone_attempt_count || 0) + 1;
     const tomorrowStr = new Date(Date.now() + 86400000).toISOString().split('T')[0];
 
     const updated: Lead = {
@@ -669,13 +680,13 @@ export default function HighSpeedCallerDialer() {
     advanceToNextLead(
       updated, 
       'INCOMING NOT AVAILABLE',
-      'Call Outcome: Incoming Not Available / Switch Off. Scheduled follow-up for tomorrow.'
+      `Call Outcome: Incoming Not Available / Switch Off (Attempt #${attempts}). Scheduled follow-up for tomorrow.`
     );
   };
 
   // Option B: Phone/Friend Picked Up
   const handlePhoneFriendPickedUp = () => {
-    const attempts = currentLead.phone_attempt_count + 1;
+    const attempts = (currentLead.phone_attempt_count || 0) + 1;
     const tomorrowStr = new Date(Date.now() + 86400000).toISOString().split('T')[0];
 
     const updated: Lead = {
@@ -700,7 +711,7 @@ export default function HighSpeedCallerDialer() {
     advanceToNextLead(
       updated, 
       'PHONE / FRIEND PICKED UP',
-      'Call Outcome: Phone / Friend Picked Up (Patient Unavailable). Scheduled follow-up for tomorrow.'
+      `Call Outcome: Phone / Friend Picked Up (Patient Unavailable - Attempt #${attempts}). Scheduled follow-up for tomorrow.`
     );
   };
 
@@ -710,7 +721,7 @@ export default function HighSpeedCallerDialer() {
     const reasonTrimmed = otherReasonCustomText.trim();
     if (!reasonTrimmed) return;
 
-    const attempts = currentLead.phone_attempt_count + 1;
+    const attempts = (currentLead.phone_attempt_count || 0) + 1;
     const tomorrowStr = new Date(Date.now() + 86400000).toISOString().split('T')[0];
 
     const updated: Lead = {
@@ -738,7 +749,7 @@ export default function HighSpeedCallerDialer() {
     advanceToNextLead(
       updated, 
       `OTHER: ${reasonTrimmed}`,
-      `Call Outcome - Other Reason: ${reasonTrimmed}`
+      `Call Outcome - Other Reason: ${reasonTrimmed} (Attempt #${attempts})`
     );
   };
 
@@ -892,7 +903,7 @@ export default function HighSpeedCallerDialer() {
             
             {/* Attempt Badge */}
             <span className="bg-slate-950 border border-slate-800 px-2.5 py-0.5 rounded-full text-[11px] font-mono font-medium text-amber-400 shrink-0">
-              Attempts: {currentLead.phone_attempt_count}
+              Attempts: {currentLead.phone_attempt_count || 0}
             </span>
 
             {/* Follow-up Urgency Tag */}

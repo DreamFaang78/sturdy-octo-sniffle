@@ -105,11 +105,13 @@ export default function LeadDetailPage() {
       return;
     }
 
-    const schedule = calculateFollowUpSchedule(newStatus, lead.follow_up_stage, lead.phone_attempt_count);
+    const attempts = (lead.phone_attempt_count || 0) + 1;
+    const schedule = calculateFollowUpSchedule(newStatus, lead.follow_up_stage, attempts);
 
     const updated: Lead = {
       ...lead,
       status: newStatus,
+      phone_attempt_count: attempts,
       next_follow_up_date: schedule.next_follow_up_date,
       follow_up_stage: schedule.follow_up_stage,
       is_cold: schedule.is_cold,
@@ -119,23 +121,50 @@ export default function LeadDetailPage() {
 
     setLead(updated);
 
+    // Persist to backend DB
+    fetch('/api/leads', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: updated.id,
+        status: updated.status,
+        phone_attempt_count: updated.phone_attempt_count,
+        last_contacted_at: updated.last_contacted_at,
+        next_follow_up_date: updated.next_follow_up_date,
+        follow_up_stage: updated.follow_up_stage,
+        is_cold: updated.is_cold,
+      }),
+    }).catch((e) => console.error('Error saving lead status:', e));
+
     // Add automated audit note
+    const autoNoteText = `Status updated to ${newStatus.replace(/_/g, ' ').toUpperCase()} (Attempt #${attempts}).${schedule.next_follow_up_date ? ` Next follow-up auto-scheduled for ${schedule.next_follow_up_date}.` : ''}`;
     const autoNote: LeadNote = {
       id: `note-auto-${Date.now()}`,
       lead_id: lead.id,
       author_id: currentUser.id,
       author_name: currentUser.name,
-      note: `Status updated to ${newStatus.replace(/_/g, ' ').toUpperCase()}.${schedule.next_follow_up_date ? ` Next follow-up auto-scheduled for ${schedule.next_follow_up_date}.` : ''}`,
+      note: autoNoteText,
       created_at: new Date().toISOString(),
     };
 
     setNotes([autoNote, ...notes]);
+    fetch('/api/notes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        leadId: lead.id,
+        note: autoNoteText,
+        authorId: currentUser.id,
+        authorName: currentUser.name,
+      }),
+    }).catch((e) => console.error('Error saving audit note:', e));
+
     showToast(`Status updated to ${newStatus.replace(/_/g, ' ')}`);
   };
 
   // Quick Action: "Phone Not Picked" Counter button
   const handlePhoneNotPicked = () => {
-    const attempts = lead.phone_attempt_count + 1;
+    const attempts = (lead.phone_attempt_count || 0) + 1;
     const tomorrowStr = new Date(Date.now() + 86400000).toISOString().split('T')[0];
 
     const updated: Lead = {
@@ -149,42 +178,94 @@ export default function LeadDetailPage() {
 
     setLead(updated);
 
+    fetch('/api/leads', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: updated.id,
+        status: updated.status,
+        phone_attempt_count: updated.phone_attempt_count,
+        last_contacted_at: updated.last_contacted_at,
+        next_follow_up_date: updated.next_follow_up_date,
+      }),
+    }).catch((e) => console.error('Error saving PNP lead status:', e));
+
+    const autoNoteText = `Attempt #${attempts}: Phone Not Picked. Auto-scheduled follow-up call for tomorrow (${tomorrowStr}).`;
     const autoNote: LeadNote = {
       id: `note-pnp-${Date.now()}`,
       lead_id: lead.id,
       author_id: currentUser.id,
       author_name: currentUser.name,
-      note: `Attempt #${attempts}: Phone Not Picked. Auto-scheduled follow-up call for tomorrow (${tomorrowStr}).`,
+      note: autoNoteText,
       created_at: new Date().toISOString(),
     };
 
     setNotes([autoNote, ...notes]);
+    fetch('/api/notes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        leadId: lead.id,
+        note: autoNoteText,
+        authorId: currentUser.id,
+        authorName: currentUser.name,
+      }),
+    }).catch((e) => console.error('Error saving PNP audit note:', e));
+
     showToast(`Attempt #${attempts} logged. Follow-up set to tomorrow!`);
   };
 
   // Useless Lead Confirm
   const confirmUselessLead = () => {
+    const attempts = (lead.phone_attempt_count || 0) + 1;
     const updated: Lead = {
       ...lead,
       status: 'useless',
+      phone_attempt_count: attempts,
       useless_reason: selectedUselessReason,
       useless_note: uselessNoteInput,
       next_follow_up_date: null,
+      last_contacted_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
 
     setLead(updated);
 
+    fetch('/api/leads', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: updated.id,
+        status: updated.status,
+        phone_attempt_count: updated.phone_attempt_count,
+        useless_reason: updated.useless_reason,
+        useless_note: updated.useless_note,
+        last_contacted_at: updated.last_contacted_at,
+      }),
+    }).catch((e) => console.error('Error saving useless lead status:', e));
+
+    const autoNoteText = `Marked as Useless Lead (Attempt #${attempts}). Reason: ${selectedUselessReason.replace(/_/g, ' ')}. Note: ${uselessNoteInput || 'N/A'}`;
     const autoNote: LeadNote = {
       id: `note-useless-${Date.now()}`,
       lead_id: lead.id,
       author_id: currentUser.id,
       author_name: currentUser.name,
-      note: `Marked as Useless Lead. Reason: ${selectedUselessReason.replace(/_/g, ' ')}. Note: ${uselessNoteInput || 'N/A'}`,
+      note: autoNoteText,
       created_at: new Date().toISOString(),
     };
 
     setNotes([autoNote, ...notes]);
+    fetch('/api/notes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        leadId: lead.id,
+        note: autoNoteText,
+        authorId: currentUser.id,
+        authorName: currentUser.name,
+      }),
+    }).catch((e) => console.error('Error saving useless audit note:', e));
+
     setUselessModalOpen(false);
     showToast('Lead marked as Useless.');
   };

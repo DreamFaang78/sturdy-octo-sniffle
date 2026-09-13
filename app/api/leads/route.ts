@@ -136,7 +136,8 @@ export async function PATCH(req: Request) {
       useless_note,
       order_status, 
       rto_reason,
-      rto_flagged_at
+      rto_flagged_at,
+      form_answers
     } = body;
 
     if (!id) {
@@ -146,6 +147,7 @@ export async function PATCH(req: Request) {
     const { data: currentLead } = await supabase.from('leads').select('form_answers').eq('id', id).single();
     const mergedFormAnswers = {
       ...(currentLead?.form_answers || {}),
+      ...(form_answers || {}),
       ...(assigned_to !== undefined ? { assigned_to: assigned_to || null, assigned_caller: assigned_to || null } : {}),
       ...(next_follow_up_time !== undefined ? { next_follow_up_time } : {}),
     };

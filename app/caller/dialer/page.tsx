@@ -27,7 +27,14 @@ import {
   Calendar,
   Plus,
   Send,
-  Loader2
+  Loader2,
+  ChevronLeft,
+  ChevronRight,
+  HelpCircle,
+  PhoneOff,
+  Users,
+  MessageSquare,
+  X
 } from 'lucide-react';
 import { Lead, LeadNote, LeadStatus, Profile, UselessReason, CallReminder } from '@/lib/types';
 import { INITIAL_PROFILES } from '@/lib/mockDb';
@@ -72,6 +79,11 @@ export default function HighSpeedCallerDialer() {
   const [endOfShiftModalOpen, setEndOfShiftModalOpen] = useState(false);
   const [remindModalOpen, setRemindModalOpen] = useState(false);
   const [reminders, setReminders] = useState<CallReminder[]>([]);
+
+  const [otherReasonModalOpen, setOtherReasonModalOpen] = useState(false);
+  const [selectedOtherSubOption, setSelectedOtherSubOption] = useState<'incoming_na' | 'friend_picked' | 'other' | null>(null);
+  const [otherReasonCustomText, setOtherReasonCustomText] = useState('');
+  const [draftNotes, setDraftNotes] = useState<Record<string, string>>({});
 
   // Undo State
   const [undoState, setUndoState] = useState<{
@@ -268,7 +280,13 @@ export default function HighSpeedCallerDialer() {
         const transcript = Array.from(event.results)
           .map((result: any) => result[0].transcript)
           .join('');
-        setNoteInput((prev) => (prev ? `${prev} ${transcript}` : transcript));
+        setNoteInput((prev) => {
+          const newVal = prev ? `${prev} ${transcript}` : transcript;
+          if (currentLead?.id) {
+            setDraftNotes((d) => ({ ...d, [currentLead.id]: newVal }));
+          }
+          return newVal;
+        });
       };
       recognition.onerror = () => setIsListening(false);
       recognition.onend = () => setIsListening(false);
@@ -276,6 +294,39 @@ export default function HighSpeedCallerDialer() {
       recognition.start();
     } catch (e) {
       setIsListening(false);
+    }
+  };
+
+  // Handle note input change with live draft caching
+  const handleNoteInputChange = (val: string) => {
+    setNoteInput(val);
+    if (currentLead?.id) {
+      setDraftNotes((prev) => ({ ...prev, [currentLead.id]: val }));
+    }
+  };
+
+  // Navigation helpers: Previous and Next
+  const handlePrevLead = () => {
+    if (currentIndex > 0) {
+      if (currentLead?.id) {
+        setDraftNotes((prev) => ({ ...prev, [currentLead.id]: noteInput }));
+      }
+      const prevIdx = currentIndex - 1;
+      const targetLead = activeQueue[prevIdx];
+      setCurrentIndex(prevIdx);
+      setNoteInput(draftNotes[targetLead?.id] || '');
+    }
+  };
+
+  const handleNextLead = () => {
+    if (currentIndex < activeQueue.length - 1) {
+      if (currentLead?.id) {
+        setDraftNotes((prev) => ({ ...prev, [currentLead.id]: noteInput }));
+      }
+      const nextIdx = currentIndex + 1;
+      const targetLead = activeQueue[nextIdx];
+      setCurrentIndex(nextIdx);
+      setNoteInput(draftNotes[targetLead?.id] || '');
     }
   };
 
@@ -299,6 +350,11 @@ export default function HighSpeedCallerDialer() {
     // Optimistically add to state immediately
     setNotes((prev) => [optimisticNote, ...prev]);
     setNoteInput('');
+    setDraftNotes((prev) => {
+      const copy = { ...prev };
+      delete copy[currentLead.id];
+      return copy;
+    });
     setNoteSavedFeedback(true);
     setTimeout(() => setNoteSavedFeedback(false), 2500);
 
@@ -330,8 +386,8 @@ export default function HighSpeedCallerDialer() {
     }
   };
 
-  // Auto-advance helper
-  const advanceToNextLead = (updatedLead: Lead, actionLabel: string) => {
+  // Auto-advance helper (supports optional explicit audit note for Previous Call History)
+  const advanceToNextLead = (updatedLead: Lead, actionLabel: string, explicitAuditNote?: string) => {
     const previousIndex = currentIndex;
     const previousLead = { ...currentLead };
 
@@ -349,32 +405,63 @@ export default function HighSpeedCallerDialer() {
     const nextLeads = leads.map((l) => (l.id === updatedLead.id ? updatedLead : l));
     setLeads(nextLeads);
 
-    // Save note if caller entered text before clicking outcome
-    if (noteInput.trim() && currentLead?.id) {
-      const trimmed = noteInput.trim();
-      const tempId = `temp-note-${Date.now()}`;
-      const optimisticNote: LeadNote = {
+    // 1. Explicit audit note (outcome trail)
+    if (explicitAuditNote && currentLead?.id) {
+      const tempId = `audit-note-${Date.now()}`;
+      const optimisticAuditNote: LeadNote = {
         id: tempId,
         lead_id: currentLead.id,
         author_id: currentUser.id,
         author_name: currentUser.name,
-        note: trimmed,
+        note: explicitAuditNote,
         created_at: new Date().toISOString(),
       };
-      setNotes((prev) => [optimisticNote, ...prev]);
-      setNoteInput('');
+      setNotes((prev) => [optimisticAuditNote, ...prev]);
 
       fetch('/api/notes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           leadId: currentLead.id,
-          note: trimmed,
+          note: explicitAuditNote,
           authorId: currentUser.id,
           authorName: currentUser.name,
         }),
-      }).catch((e) => console.error('Error saving note on advance:', e));
+      }).catch((e) => console.error('Error saving audit note on advance:', e));
     }
+
+    // 2. Manual note entered by caller
+    const trimmedInput = noteInput.trim();
+    if (trimmedInput && currentLead?.id) {
+      const tempId = `manual-note-${Date.now()}`;
+      const optimisticNote: LeadNote = {
+        id: tempId,
+        lead_id: currentLead.id,
+        author_id: currentUser.id,
+        author_name: currentUser.name,
+        note: trimmedInput,
+        created_at: new Date().toISOString(),
+      };
+      setNotes((prev) => [optimisticNote, ...prev]);
+
+      fetch('/api/notes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          leadId: currentLead.id,
+          note: trimmedInput,
+          authorId: currentUser.id,
+          authorName: currentUser.name,
+        }),
+      }).catch((e) => console.error('Error saving manual note on advance:', e));
+    }
+
+    // Clear draft for current lead
+    setDraftNotes((prev) => {
+      const copy = { ...prev };
+      delete copy[currentLead.id];
+      return copy;
+    });
 
     // Persist lead status update to backend DB
     fetch('/api/leads', {
@@ -397,11 +484,14 @@ export default function HighSpeedCallerDialer() {
 
     setSessionCompletedCalls((prev) => prev + 1);
 
+    // Advance to next lead and load draft
+    let nextIdx = 0;
     if (currentIndex < activeQueue.length - 1) {
-      setCurrentIndex((prev) => prev + 1);
-    } else {
-      setCurrentIndex(0);
+      nextIdx = currentIndex + 1;
     }
+    const nextLeadObj = activeQueue[nextIdx];
+    setCurrentIndex(nextIdx);
+    setNoteInput(draftNotes[nextLeadObj?.id] || '');
   };
 
   const handleStatusSelect = (status: LeadStatus) => {
@@ -423,7 +513,11 @@ export default function HighSpeedCallerDialer() {
       updated_at: new Date().toISOString(),
     };
 
-    advanceToNextLead(updated, status.replace(/_/g, ' '));
+    advanceToNextLead(
+      updated, 
+      status.replace(/_/g, ' '),
+      `Call Outcome: Status marked as ${status.replace(/_/g, ' ').toUpperCase()}.${schedule.next_follow_up_date ? ` Follow-up scheduled for ${schedule.next_follow_up_date}.` : ''}`
+    );
   };
 
   const handlePhoneNotPicked = () => {
@@ -440,7 +534,11 @@ export default function HighSpeedCallerDialer() {
       updated_at: new Date().toISOString(),
     };
 
-    advanceToNextLead(updated, `PHONE NOT PICKED (Attempt #${attempts})`);
+    advanceToNextLead(
+      updated, 
+      `PHONE NOT PICKED (Attempt #${attempts})`,
+      `Call Outcome: Phone Not Picked (Attempt #${attempts}). Auto-rescheduled for tomorrow.`
+    );
   };
 
   const handleConfirmUseless = () => {
@@ -454,15 +552,124 @@ export default function HighSpeedCallerDialer() {
     };
 
     setUselessModalOpen(false);
-    advanceToNextLead(updated, `USELESS (${uselessReason})`);
+    advanceToNextLead(
+      updated, 
+      `USELESS (${uselessReason})`,
+      `Call Outcome: Marked as USELESS (${uselessReason.replace(/_/g, ' ')}).`
+    );
+  };
+
+  // Option A: Incoming Not Available
+  const handleIncomingNotAvailable = () => {
+    const attempts = currentLead.phone_attempt_count + 1;
+    const tomorrowStr = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+
+    const updated: Lead = {
+      ...currentLead,
+      status: 'phone_not_picked',
+      phone_attempt_count: attempts,
+      next_follow_up_date: tomorrowStr,
+      next_follow_up_time: '10:30 AM',
+      last_contacted_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      form_answers: {
+        ...(currentLead.form_answers || {}),
+        unreachable_type: 'unreachable_incoming_na',
+        unreachable_label: 'Incoming Not Available',
+      },
+    };
+
+    setOtherReasonModalOpen(false);
+    setSelectedOtherSubOption(null);
+    setOtherReasonCustomText('');
+
+    advanceToNextLead(
+      updated, 
+      'INCOMING NOT AVAILABLE',
+      'Call Outcome: Incoming Not Available / Switch Off. Scheduled follow-up for tomorrow.'
+    );
+  };
+
+  // Option B: Phone/Friend Picked Up
+  const handlePhoneFriendPickedUp = () => {
+    const attempts = currentLead.phone_attempt_count + 1;
+    const tomorrowStr = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+
+    const updated: Lead = {
+      ...currentLead,
+      status: 'phone_not_picked',
+      phone_attempt_count: attempts,
+      next_follow_up_date: tomorrowStr,
+      next_follow_up_time: '10:30 AM',
+      last_contacted_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      form_answers: {
+        ...(currentLead.form_answers || {}),
+        unreachable_type: 'unreachable_third_party',
+        unreachable_label: 'Phone/Friend Picked Up',
+      },
+    };
+
+    setOtherReasonModalOpen(false);
+    setSelectedOtherSubOption(null);
+    setOtherReasonCustomText('');
+
+    advanceToNextLead(
+      updated, 
+      'PHONE / FRIEND PICKED UP',
+      'Call Outcome: Phone / Friend Picked Up (Patient Unavailable). Scheduled follow-up for tomorrow.'
+    );
+  };
+
+  // Option C: Other Reason (free-text submit)
+  const handleSubmitOtherReason = (e: React.FormEvent) => {
+    e.preventDefault();
+    const reasonTrimmed = otherReasonCustomText.trim();
+    if (!reasonTrimmed) return;
+
+    const attempts = currentLead.phone_attempt_count + 1;
+    const tomorrowStr = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+
+    const updated: Lead = {
+      ...currentLead,
+      status: 'phone_not_picked',
+      phone_attempt_count: attempts,
+      useless_reason: 'other',
+      useless_note: reasonTrimmed,
+      next_follow_up_date: tomorrowStr,
+      next_follow_up_time: '10:30 AM',
+      last_contacted_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      form_answers: {
+        ...(currentLead.form_answers || {}),
+        unreachable_type: 'unreachable_other',
+        unreachable_label: 'Other Reason',
+        unreachable_reason: reasonTrimmed,
+      },
+    };
+
+    setOtherReasonModalOpen(false);
+    setSelectedOtherSubOption(null);
+    setOtherReasonCustomText('');
+
+    advanceToNextLead(
+      updated, 
+      `OTHER: ${reasonTrimmed}`,
+      `Call Outcome - Other Reason: ${reasonTrimmed}`
+    );
   };
 
   const handleSkipLead = () => {
-    if (currentIndex < activeQueue.length - 1) {
-      setCurrentIndex((prev) => prev + 1);
-    } else {
-      setCurrentIndex(0);
+    if (currentLead?.id) {
+      setDraftNotes((prev) => ({ ...prev, [currentLead.id]: noteInput }));
     }
+    let nextIdx = 0;
+    if (currentIndex < activeQueue.length - 1) {
+      nextIdx = currentIndex + 1;
+    }
+    const targetLead = activeQueue[nextIdx];
+    setCurrentIndex(nextIdx);
+    setNoteInput(draftNotes[targetLead?.id] || '');
   };
 
   const handleUndo = () => {
@@ -474,6 +681,8 @@ export default function HighSpeedCallerDialer() {
 
     setLeads(restoredLeads);
     setCurrentIndex(undoState.previousIndex);
+    const targetLead = restoredLeads[undoState.previousIndex];
+    setNoteInput(draftNotes[targetLead?.id] || '');
     setSessionCompletedCalls((prev) => Math.max(0, prev - 1));
     setUndoState(null);
   };
@@ -526,13 +735,37 @@ export default function HighSpeedCallerDialer() {
               <span className="hidden md:inline">Shift Check</span>
             </button>
 
-            <span className="text-xs font-mono text-slate-400 whitespace-nowrap">
-              <span className="text-white font-bold">{currentIndex + 1}</span>/{activeQueue.length}
-            </span>
+            {/* Back / Counter / Forward Navigation Group */}
+            <div className="flex items-center bg-slate-800/90 border border-slate-700/60 rounded-lg p-0.5 space-x-1">
+              <button
+                onClick={handlePrevLead}
+                disabled={currentIndex === 0}
+                className="px-2 py-1 hover:bg-slate-700 disabled:opacity-30 disabled:hover:bg-transparent text-slate-300 hover:text-white rounded text-xs font-semibold flex items-center space-x-1 transition"
+                title="Previous Lead (◀)"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Prev</span>
+              </button>
+
+              <span className="px-2 py-0.5 text-xs font-mono text-slate-400 whitespace-nowrap bg-slate-900/80 rounded border border-slate-800">
+                <span className="text-white font-bold">{currentIndex + 1}</span>/{activeQueue.length}
+              </span>
+
+              <button
+                onClick={handleNextLead}
+                disabled={currentIndex >= activeQueue.length - 1}
+                className="px-2 py-1 hover:bg-slate-700 disabled:opacity-30 disabled:hover:bg-transparent text-slate-300 hover:text-white rounded text-xs font-semibold flex items-center space-x-1 transition"
+                title="Next Lead (▶)"
+              >
+                <span className="hidden sm:inline">Next</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
 
             <button
               onClick={handleSkipLead}
               className="inline-flex items-center space-x-1 px-2.5 py-1 sm:px-3 sm:py-1.5 bg-slate-800/80 hover:bg-slate-800 text-slate-400 hover:text-white text-xs font-medium rounded-lg transition border border-slate-700/50"
+              title="Skip Lead (moves to next, cycles at queue end)"
             >
               <span>Skip</span>
               <SkipForward className="w-3.5 h-3.5" />
@@ -669,8 +902,8 @@ export default function HighSpeedCallerDialer() {
 
         </section>
 
-        {/* SECTION 2: 4 PRIMARY OUTCOME BUTTONS (Above the fold) */}
-        <section className="space-y-1.5">
+        {/* SECTION 2: 4 PRIMARY OUTCOME BUTTONS + 5TH OTHER/UNREACHABLE BUTTON */}
+        <section className="space-y-2">
           <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 px-1">
             Log Call Outcome
           </div>
@@ -718,6 +951,20 @@ export default function HighSpeedCallerDialer() {
             </button>
 
           </div>
+
+          {/* 5. Other / Unreachable Reason Button */}
+          <button
+            onClick={() => {
+              setSelectedOtherSubOption(null);
+              setOtherReasonCustomText('');
+              setOtherReasonModalOpen(true);
+            }}
+            className="w-full p-2.5 sm:p-3 bg-purple-600/15 hover:bg-purple-600/25 border-2 border-purple-500/40 hover:border-purple-400 text-purple-300 rounded-xl sm:rounded-2xl flex items-center justify-center space-x-2 transition shadow-md hover:scale-[1.005] active:scale-95"
+          >
+            <HelpCircle className="w-4 h-4 text-purple-400 shrink-0" />
+            <span className="text-xs sm:text-sm font-extrabold uppercase tracking-wide">5. Other / Unreachable Reason</span>
+            <span className="text-[10px] text-purple-300/70 font-normal hidden xs:inline">→ Switch Off / 3rd Party / Custom</span>
+          </button>
         </section>
 
         {/* SECTION 3: SECONDARY TOOLS & COMMUNICATION (WhatsApp, Call Notes, History) */}
@@ -766,7 +1013,7 @@ export default function HighSpeedCallerDialer() {
               <input
                 type="text"
                 value={noteInput}
-                onChange={(e) => setNoteInput(e.target.value)}
+                onChange={(e) => handleNoteInputChange(e.target.value)}
                 placeholder="Type or speak call notes..."
                 className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-teal-500 placeholder:text-slate-600"
               />
@@ -948,6 +1195,140 @@ export default function HighSpeedCallerDialer() {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 5. Other / Unreachable Reason Modal */}
+      {otherReasonModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-5 sm:p-6 text-slate-100 shadow-2xl relative animate-in zoom-in-95 duration-150">
+            <button
+              onClick={() => {
+                setOtherReasonModalOpen(false);
+                setSelectedOtherSubOption(null);
+                setOtherReasonCustomText('');
+              }}
+              className="absolute top-4 right-4 text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition"
+              title="Close modal"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <div className="flex items-center space-x-2.5 mb-4">
+              <div className="p-2 bg-purple-500/20 text-purple-400 rounded-xl">
+                <HelpCircle className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white">Other / Unreachable Reason</h3>
+                <p className="text-xs text-slate-400">Select specific unreachable reason</p>
+              </div>
+            </div>
+
+            <div className="space-y-2.5 my-3">
+              {/* Option A: Incoming Not Available */}
+              <button
+                onClick={handleIncomingNotAvailable}
+                className="w-full p-3.5 bg-slate-950 hover:bg-purple-950/40 border border-slate-800 hover:border-purple-500/50 rounded-xl text-left transition flex items-start space-x-3 group"
+              >
+                <PhoneOff className="w-4 h-4 text-purple-400 mt-0.5 shrink-0 group-hover:scale-110 transition-transform" />
+                <div className="flex-1">
+                  <div className="text-xs font-bold text-slate-100 group-hover:text-purple-300">
+                    a. Incoming Not Available
+                  </div>
+                  <div className="text-[11px] text-slate-400 mt-0.5">
+                    Phone switched off / network unreachable. Follow-up scheduled for tomorrow.
+                  </div>
+                </div>
+              </button>
+
+              {/* Option B: Phone/Friend Picked Up */}
+              <button
+                onClick={handlePhoneFriendPickedUp}
+                className="w-full p-3.5 bg-slate-950 hover:bg-purple-950/40 border border-slate-800 hover:border-purple-500/50 rounded-xl text-left transition flex items-start space-x-3 group"
+              >
+                <Users className="w-4 h-4 text-purple-400 mt-0.5 shrink-0 group-hover:scale-110 transition-transform" />
+                <div className="flex-1">
+                  <div className="text-xs font-bold text-slate-100 group-hover:text-purple-300">
+                    b. Phone/Friend Picked Up
+                  </div>
+                  <div className="text-[11px] text-slate-400 mt-0.5">
+                    Family or friend answered, patient unavailable. Follow-up scheduled for tomorrow.
+                  </div>
+                </div>
+              </button>
+
+              {/* Option C: Other Reason Toggle */}
+              <button
+                onClick={() => setSelectedOtherSubOption(selectedOtherSubOption === 'other' ? null : 'other')}
+                className={`w-full p-3.5 bg-slate-950 hover:bg-purple-950/40 border rounded-xl text-left transition flex items-start space-x-3 group ${
+                  selectedOtherSubOption === 'other'
+                    ? 'border-purple-500 bg-purple-950/20'
+                    : 'border-slate-800 hover:border-purple-500/50'
+                }`}
+              >
+                <MessageSquare className="w-4 h-4 text-purple-400 mt-0.5 shrink-0 group-hover:scale-110 transition-transform" />
+                <div className="flex-1">
+                  <div className="text-xs font-bold text-slate-100 group-hover:text-purple-300">
+                    c. Other Reason (Custom Note)
+                  </div>
+                  <div className="text-[11px] text-slate-400 mt-0.5">
+                    Specify custom unreachable or follow-up reason with free-text notes.
+                  </div>
+                </div>
+              </button>
+            </div>
+
+            {/* If Option C is selected, reveal the text box and submit button */}
+            {selectedOtherSubOption === 'other' && (
+              <form onSubmit={handleSubmitOtherReason} className="mt-3 pt-3 border-t border-slate-800 space-y-3 animate-in fade-in">
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">
+                    Describe Reason / Note: <span className="text-rose-400">*</span>
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={otherReasonCustomText}
+                    onChange={(e) => setOtherReasonCustomText(e.target.value)}
+                    placeholder="Enter details about why lead is unreachable or requested action..."
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-purple-500 resize-none"
+                    autoFocus
+                  />
+                </div>
+
+                <div className="flex justify-end space-x-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedOtherSubOption(null);
+                      setOtherReasonCustomText('');
+                    }}
+                    className="px-3 py-1.5 bg-slate-800 text-slate-300 text-xs rounded-xl font-medium"
+                  >
+                    Back
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={!otherReasonCustomText.trim()}
+                    className="px-4 py-1.5 bg-purple-600 hover:bg-purple-500 disabled:opacity-40 disabled:hover:bg-purple-600 text-white text-xs font-bold rounded-xl transition shadow"
+                  >
+                    Confirm & Save Reason
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {!selectedOtherSubOption && (
+              <div className="flex justify-end mt-4 pt-2 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setOtherReasonModalOpen(false)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-xl font-medium transition"
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

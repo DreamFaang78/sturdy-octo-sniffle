@@ -193,7 +193,47 @@ CREATE TABLE IF NOT EXISTS public.patient_care_journey (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 12. ROW LEVEL SECURITY (RLS) POLICIES & RE-RUN SAFETY
+-- 12. CALL REMINDERS (TIMED SCHEDULES & NOTIFICATIONS)
+CREATE TABLE IF NOT EXISTS public.call_reminders (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    lead_id UUID NOT NULL REFERENCES public.leads(id) ON DELETE CASCADE,
+    caller_id TEXT,
+    caller_name TEXT NOT NULL DEFAULT 'Caller',
+    lead_name TEXT NOT NULL DEFAULT 'Lead',
+    lead_phone TEXT NOT NULL DEFAULT '',
+    remind_at TIMESTAMPTZ NOT NULL,
+    notify_at TIMESTAMPTZ NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending', -- 'pending', 'dismissed', 'completed'
+    note TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 13. ENSURE ALL COLUMNS ON EXISTING TABLES (IDEMPOTENT MIGRATION)
+ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS phone_attempt_count INT NOT NULL DEFAULT 0;
+ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS form_answers JSONB DEFAULT '{}'::jsonb;
+ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS last_contacted_at TIMESTAMPTZ;
+ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS next_follow_up_date DATE;
+ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS follow_up_stage INT NOT NULL DEFAULT 0;
+ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS is_cold BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS useless_reason useless_reason_enum;
+ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS useless_note TEXT;
+ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS order_status order_status_enum;
+ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS rto_reason TEXT;
+ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS rto_flagged_at TIMESTAMPTZ;
+
+-- 14. INDEXES
+CREATE INDEX IF NOT EXISTS idx_leads_assigned_to ON public.leads(assigned_to);
+CREATE INDEX IF NOT EXISTS idx_leads_status ON public.leads(status);
+CREATE INDEX IF NOT EXISTS idx_leads_next_follow_up ON public.leads(next_follow_up_date);
+CREATE INDEX IF NOT EXISTS idx_leads_order_status ON public.leads(order_status);
+CREATE INDEX IF NOT EXISTS idx_lead_notes_lead_id ON public.lead_notes(lead_id);
+CREATE INDEX IF NOT EXISTS idx_status_history_lead_id ON public.status_history(lead_id);
+CREATE INDEX IF NOT EXISTS idx_call_reminders_lead_id ON public.call_reminders(lead_id);
+CREATE INDEX IF NOT EXISTS idx_call_reminders_status ON public.call_reminders(status);
+CREATE INDEX IF NOT EXISTS idx_settings_key ON public.settings(key);
+
+-- 15. ROW LEVEL SECURITY (RLS) POLICIES & RE-RUN SAFETY
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.leads ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.lead_notes ENABLE ROW LEVEL SECURITY;
@@ -203,6 +243,7 @@ ALTER TABLE public.settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.manual_dial_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.lead_ingestion_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.patient_care_journey ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.call_reminders ENABLE ROW LEVEL SECURITY;
 
 -- Profiles Policies
 DROP POLICY IF EXISTS "Public profiles read access" ON public.profiles;
@@ -277,7 +318,28 @@ CREATE POLICY "Admin access to patient_care_journey" ON public.patient_care_jour
     EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
 );
 
+DROP POLICY IF EXISTS "Access to call_reminders" ON public.call_reminders;
+CREATE POLICY "Access to call_reminders" ON public.call_reminders FOR ALL USING (true);
+
 -- Realtime Publication (Safe Add)
+DO $$ BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.leads;
+EXCEPTION
+    WHEN OTHERS THEN NULL;
+END $$;
+
+DO $$ BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.lead_notes;
+EXCEPTION
+    WHEN OTHERS THEN NULL;
+END $$;
+
+DO $$ BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.call_reminders;
+EXCEPTION
+    WHEN OTHERS THEN NULL;
+END $$;
+
 DO $$ BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE public.lead_ingestion_log;
 EXCEPTION

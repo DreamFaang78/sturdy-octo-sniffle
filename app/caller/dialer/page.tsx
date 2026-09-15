@@ -36,7 +36,7 @@ import {
   MessageSquare,
   X
 } from 'lucide-react';
-import { Lead, LeadNote, LeadStatus, Profile, UselessReason, CallReminder } from '@/lib/types';
+import { Lead, LeadNote, LeadStatus, Profile, UselessReason, CallReminder, DialerQueueItem, CallLog } from '@/lib/types';
 import { INITIAL_PROFILES } from '@/lib/mockDb';
 import { calculateFollowUpSchedule } from '@/lib/followup';
 import { 
@@ -50,21 +50,24 @@ import QuickWhatsAppButtons from '@/components/QuickWhatsAppButtons';
 import RemindMeLaterModal from '@/components/RemindMeLaterModal';
 import ReminderNotificationBanner from '@/components/ReminderNotificationBanner';
 
-async function fetchLeadsFromApi(callerId?: string): Promise<Lead[]> {
+async function fetchCallerQueueFromApi(callerId: string): Promise<{ queue: DialerQueueItem[]; currentQueuePosition: number }> {
   try {
-    const url = callerId ? `/api/leads?callerId=${encodeURIComponent(callerId)}` : '/api/leads';
-    const res = await fetch(url, { cache: 'no-store' });
-    if (!res.ok) return [];
+    const res = await fetch(`/api/caller/queue?callerId=${encodeURIComponent(callerId)}`, { cache: 'no-store' });
+    if (!res.ok) return { queue: [], currentQueuePosition: 1 };
     const json = await res.json();
-    return json.leads || [];
+    return {
+      queue: json.queue || [],
+      currentQueuePosition: json.currentQueuePosition || 1,
+    };
   } catch {
-    return [];
+    return { queue: [], currentQueuePosition: 1 };
   }
 }
 
 export default function HighSpeedCallerDialer() {
   const [currentUser, setCurrentUser] = useState<Profile>(INITIAL_PROFILES[1]); // Caller Team
-  const [leads, setLeads] = useState<Lead[]>([]);
+  const [queueItems, setQueueItems] = useState<DialerQueueItem[]>([]);
+  const [callLogs, setCallLogs] = useState<CallLog[]>([]);
   const [notes, setNotes] = useState<LeadNote[]>([]);
   const [isSavingNote, setIsSavingNote] = useState(false);
   const [notesLoading, setNotesLoading] = useState(false);
@@ -79,6 +82,7 @@ export default function HighSpeedCallerDialer() {
   const [endOfShiftModalOpen, setEndOfShiftModalOpen] = useState(false);
   const [remindModalOpen, setRemindModalOpen] = useState(false);
   const [reminders, setReminders] = useState<CallReminder[]>([]);
+  const [callsTodayCount, setCallsTodayCount] = useState(0);
 
   const [otherReasonModalOpen, setOtherReasonModalOpen] = useState(false);
   const [selectedOtherSubOption, setSelectedOtherSubOption] = useState<'incoming_na' | 'friend_picked' | 'other' | null>(null);
@@ -92,33 +96,33 @@ export default function HighSpeedCallerDialer() {
     toastMessage: string;
   } | null>(null);
 
-  const [sessionCompletedCalls, setSessionCompletedCalls] = useState(0);
   const restoredCallerIdRef = useRef<string | null>(null);
   const dailyTarget = 50;
 
-  // Persist caller's current lead position to both localStorage (instant client sync) and Supabase settings (durable server state)
-  const persistQueuePosition = (leadId: string, callerId: string = currentUser.id) => {
+  // Persist caller's current lead position
+  const persistQueuePosition = (leadId: string, queuePos?: number, callerId: string = currentUser.id) => {
     if (!leadId || !callerId) return;
 
-    // 1. Instant local storage cache
     if (typeof window !== 'undefined') {
       try {
         localStorage.setItem(`hommed_dialer_pos_${callerId}`, leadId);
       } catch (e) {}
     }
 
-    // 2. Server-side persistence in Supabase
     fetch('/api/caller/position', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ callerId, leadId }),
-    }).catch((err) => console.error('[Dialer] Failed to persist position to Supabase:', err));
-  };
+    }).catch((err) => console.error('[Dialer] Failed to persist position:', err));
 
-  // Calculate contacted leads today from DB + current session increment
-  const todayDateStr = new Date().toISOString().split('T')[0];
-  const dbContactedToday = leads.filter((l) => l.last_contacted_at && l.last_contacted_at.startsWith(todayDateStr)).length;
-  const completedCallsToday = dbContactedToday + sessionCompletedCalls;
+    if (queuePos !== undefined) {
+      fetch('/api/caller/queue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ callerId, queuePosition: queuePos }),
+      }).catch((e) => {});
+    }
+  };
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -132,7 +136,6 @@ export default function HighSpeedCallerDialer() {
         } catch (e) {}
       }
 
-      // Check notification permission
       if ('Notification' in window && Notification.permission === 'granted') {
         setNotificationsAllowed(true);
       }
@@ -150,133 +153,128 @@ export default function HighSpeedCallerDialer() {
     } catch (e) {}
   };
 
+  // Fetch today's calls count for pace bar
+  const fetchCallsToday = async () => {
+    try {
+      const res = await fetch(`/api/caller/calls?callerId=${currentUser.id}&today=true`);
+      if (res.ok) {
+        const data = await res.json();
+        setCallsTodayCount(data.callsTodayCount || 0);
+      }
+    } catch (e) {}
+  };
+
   useEffect(() => {
     fetchReminders();
+    fetchCallsToday();
   }, [currentUser.id]);
 
-  // Fetch real leads from API and subscribe to updates
-  useEffect(() => {
-    const supabase = createClient();
+  // Load static caller queue from dialer_queue table
+  const loadQueue = async () => {
+    const { queue, currentQueuePosition } = await fetchCallerQueueFromApi(currentUser.id);
+    if (queue.length > 0) {
+      setQueueItems(queue);
 
-    const loadLeads = async () => {
-      const data = await fetchLeadsFromApi(currentUser.id);
-      if (data.length > 0) {
-        setLeads(data);
+      // Restore position if not already restored
+      if (restoredCallerIdRef.current !== currentUser.id) {
+        const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+        const urlLeadId = params?.get('leadId');
+
+        if (urlLeadId) {
+          const idx = queue.findIndex((q) => q.lead_id === urlLeadId || q.lead?.id === urlLeadId);
+          if (idx !== -1) {
+            setCurrentIndex(idx);
+            restoredCallerIdRef.current = currentUser.id;
+            return;
+          }
+        }
+
+        // Fetch server position
+        let serverLeadId: string | null = null;
+        try {
+          const posRes = await fetch(`/api/caller/position?callerId=${encodeURIComponent(currentUser.id)}`);
+          if (posRes.ok) {
+            const json = await posRes.json();
+            serverLeadId = json.leadId;
+          }
+        } catch (e) {}
+
+        let cachedLeadId: string | null = null;
+        if (typeof window !== 'undefined') {
+          try {
+            cachedLeadId = localStorage.getItem(`hommed_dialer_pos_${currentUser.id}`);
+          } catch (e) {}
+        }
+
+        const targetLeadId = serverLeadId || cachedLeadId;
+        if (targetLeadId) {
+          const idx = queue.findIndex((q) => q.lead_id === targetLeadId || q.lead?.id === targetLeadId);
+          if (idx !== -1) {
+            setCurrentIndex(idx);
+          } else {
+            // Find first pending item
+            const firstPendingIdx = queue.findIndex((q) => q.status === 'pending');
+            setCurrentIndex(firstPendingIdx !== -1 ? firstPendingIdx : 0);
+          }
+        } else {
+          // Find first pending item
+          const firstPendingIdx = queue.findIndex((q) => q.status === 'pending');
+          setCurrentIndex(firstPendingIdx !== -1 ? firstPendingIdx : 0);
+        }
+
+        restoredCallerIdRef.current = currentUser.id;
       }
-    };
+    }
+  };
 
-    loadLeads();
+  useEffect(() => {
+    loadQueue();
 
+    const supabase = createClient();
     const channel = supabase
-      .channel('caller-dialer-leads-realtime')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'leads' }, () => {
-        loadLeads();
+      .channel('caller-dialer-queue-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'dialer_queue' }, () => {
+        loadQueue();
       })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'leads' }, () => {
-        loadLeads();
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, () => {
+        loadQueue();
       })
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [currentUser.id]);
 
-  // Restore caller's saved queue position on load / refresh (from URL param, Supabase DB, or local cache)
-  useEffect(() => {
-    if (leads.length === 0) return;
-    if (restoredCallerIdRef.current === currentUser.id) return;
+  // Current active lead derived from fixed queue Items
+  const currentQueueItem = queueItems[currentIndex] || queueItems[0];
+  const currentLead = currentQueueItem?.lead;
 
-    const restoreQueuePosition = async () => {
-      const callerAssigned = leads.filter((l) => l.assigned_to === currentUser.id);
-      const queueToSearch = callerAssigned.length > 0 ? callerAssigned : leads;
-
-      // 1. Check URL query param leadId first (e.g. direct link from leads table or reminder)
-      const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-      const urlLeadId = params?.get('leadId');
-
-      if (urlLeadId) {
-        const idx = queueToSearch.findIndex((l) => l.id === urlLeadId);
-        if (idx !== -1) {
-          setCurrentIndex(idx);
-          setNoteInput(draftNotes[queueToSearch[idx].id] || '');
-          restoredCallerIdRef.current = currentUser.id;
-          window.history.replaceState({}, '', window.location.pathname);
-          persistQueuePosition(queueToSearch[idx].id, currentUser.id);
-          return;
-        }
-      }
-
-      // 2. Fetch server-side saved current_lead_id from Supabase
-      let serverLeadId: string | null = null;
-      try {
-        const res = await fetch(`/api/caller/position?callerId=${encodeURIComponent(currentUser.id)}`);
-        if (res.ok) {
-          const json = await res.json();
-          if (json.leadId) {
-            serverLeadId = json.leadId;
-          }
-        }
-      } catch (err) {
-        console.error('[Dialer] Error fetching position from Supabase:', err);
-      }
-
-      // 3. Fallback to localStorage cache
-      let cachedLeadId: string | null = null;
-      if (typeof window !== 'undefined') {
-        try {
-          cachedLeadId = localStorage.getItem(`hommed_dialer_pos_${currentUser.id}`);
-        } catch (e) {}
-      }
-
-      const targetLeadId = serverLeadId || cachedLeadId;
-
-      if (targetLeadId) {
-        const idx = queueToSearch.findIndex((l) => l.id === targetLeadId);
-        if (idx !== -1) {
-          setCurrentIndex(idx);
-          setNoteInput(draftNotes[queueToSearch[idx].id] || '');
-        } else {
-          // Graceful fallback: If saved lead no longer exists or was reassigned, start at first lead in queue
-          setCurrentIndex(0);
-          if (queueToSearch[0]?.id) {
-            persistQueuePosition(queueToSearch[0].id, currentUser.id);
-          }
-        }
-      } else {
-        // First-ever visit: start on lead 0 and persist initial position
-        setCurrentIndex(0);
-        if (queueToSearch[0]?.id) {
-          persistQueuePosition(queueToSearch[0].id, currentUser.id);
-        }
-      }
-
-      restoredCallerIdRef.current = currentUser.id;
-    };
-
-    restoreQueuePosition();
-  }, [leads, currentUser.id]);
-
-  // Filter leads assigned to current caller (fall back to all returned leads if queue empty)
-  const myQueue = leads.filter((l) => l.assigned_to === currentUser.id);
-  const activeQueue = myQueue.length > 0 ? myQueue : leads;
-  const currentLead = activeQueue[currentIndex] || activeQueue[0] || leads[0];
-  const leadNotes = currentLead ? notes.filter((n) => n.lead_id === currentLead.id) : [];
-
-  // Fetch notes specifically for the active lead from live DB
-  const fetchNotesForLead = async (leadId: string) => {
+  // Fetch call logs and notes for active lead
+  const fetchLeadLogsAndNotes = async (leadId: string) => {
     if (!leadId) return;
     try {
       setNotesLoading(true);
-      const res = await fetch(`/api/notes?leadId=${encodeURIComponent(leadId)}`, { cache: 'no-store' });
-      if (res.ok) {
-        const json = await res.json();
+
+      // 1. Fetch notes
+      const notesRes = await fetch(`/api/notes?leadId=${encodeURIComponent(leadId)}`, { cache: 'no-store' });
+      if (notesRes.ok) {
+        const json = await notesRes.json();
         const fetchedNotes: LeadNote[] = json.notes || [];
         setNotes((prev) => {
           const otherNotes = prev.filter((n) => n.lead_id !== leadId);
           return [...fetchedNotes, ...otherNotes];
         });
       }
+
+      // 2. Fetch call_log entries
+      const callsRes = await fetch(`/api/caller/calls?leadId=${encodeURIComponent(leadId)}`, { cache: 'no-store' });
+      if (callsRes.ok) {
+        const json = await callsRes.json();
+        setCallLogs(json.calls || []);
+      }
     } catch (err) {
-      console.error('[Speed Dial] Error fetching notes for lead:', err);
+      console.error('[Dialer] Error fetching logs and notes:', err);
     } finally {
       setNotesLoading(false);
     }
@@ -284,27 +282,25 @@ export default function HighSpeedCallerDialer() {
 
   useEffect(() => {
     if (currentLead?.id) {
-      fetchNotesForLead(currentLead.id);
+      fetchLeadLogsAndNotes(currentLead.id);
     }
   }, [currentLead?.id]);
 
-  // Subscribe to real-time changes on lead_notes for current lead
+  // Subscribe to real-time changes on lead_notes and call_log for current lead
   useEffect(() => {
     if (!currentLead?.id) return;
     const supabase = createClient();
     const channel = supabase
-      .channel(`caller-dialer-notes-${currentLead.id}`)
+      .channel(`caller-dialer-logs-${currentLead.id}`)
       .on(
         'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'lead_notes',
-          filter: `lead_id=eq.${currentLead.id}`,
-        },
-        () => {
-          fetchNotesForLead(currentLead.id);
-        }
+        { event: '*', schema: 'public', table: 'lead_notes', filter: `lead_id=eq.${currentLead.id}` },
+        () => fetchLeadLogsAndNotes(currentLead.id)
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'call_log', filter: `lead_id=eq.${currentLead.id}` },
+        () => fetchLeadLogsAndNotes(currentLead.id)
       )
       .subscribe();
 
@@ -371,7 +367,6 @@ export default function HighSpeedCallerDialer() {
     }
   };
 
-  // Handle note input change with live draft caching
   const handleNoteInputChange = (val: string) => {
     setNoteInput(val);
     if (currentLead?.id) {
@@ -379,34 +374,85 @@ export default function HighSpeedCallerDialer() {
     }
   };
 
-  // Navigation helpers: Previous and Next
+  // HANDLE TAP TO CALL CLICK EVENT (Inserts call_log tap event immediately)
+  const handleTapToCall = async () => {
+    if (!currentLead?.id) return;
+    try {
+      const res = await fetch('/api/caller/calls', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'tap',
+          callerId: currentUser.id,
+          leadId: currentLead.id,
+        }),
+      });
+
+      if (res.ok) {
+        const json = await res.json();
+        if (json.attemptNumber) {
+          // Immediately update attempt count in UI
+          setQueueItems((prev) =>
+            prev.map((q) =>
+              q.lead_id === currentLead.id && q.lead
+                ? { ...q, lead: { ...q.lead, phone_attempt_count: json.attemptNumber } }
+                : q
+            )
+          );
+          fetchLeadLogsAndNotes(currentLead.id);
+          fetchCallsToday();
+        }
+      }
+    } catch (err) {
+      console.error('[Dialer] Error logging tap to call event:', err);
+    }
+  };
+
+  // Navigation helpers: Previous and Next within fixed static queue
   const handlePrevLead = () => {
     if (currentIndex > 0) {
       if (currentLead?.id) {
         setDraftNotes((prev) => ({ ...prev, [currentLead.id]: noteInput }));
       }
       const prevIdx = currentIndex - 1;
-      const targetLead = activeQueue[prevIdx];
+      const targetQueueItem = queueItems[prevIdx];
       setCurrentIndex(prevIdx);
-      setNoteInput(draftNotes[targetLead?.id] || '');
-      if (targetLead?.id) {
-        persistQueuePosition(targetLead.id, currentUser.id);
+      setNoteInput(draftNotes[targetQueueItem?.lead_id] || '');
+      if (targetQueueItem?.lead_id) {
+        persistQueuePosition(targetQueueItem.lead_id, targetQueueItem.queue_position, currentUser.id);
       }
     }
   };
 
   const handleNextLead = () => {
-    if (currentIndex < activeQueue.length - 1) {
+    if (currentIndex < queueItems.length - 1) {
       if (currentLead?.id) {
         setDraftNotes((prev) => ({ ...prev, [currentLead.id]: noteInput }));
       }
       const nextIdx = currentIndex + 1;
-      const targetLead = activeQueue[nextIdx];
+      const targetQueueItem = queueItems[nextIdx];
       setCurrentIndex(nextIdx);
-      setNoteInput(draftNotes[targetLead?.id] || '');
-      if (targetLead?.id) {
-        persistQueuePosition(targetLead.id, currentUser.id);
+      setNoteInput(draftNotes[targetQueueItem?.lead_id] || '');
+      if (targetQueueItem?.lead_id) {
+        persistQueuePosition(targetQueueItem.lead_id, targetQueueItem.queue_position, currentUser.id);
       }
+    }
+  };
+
+  // Skip Lead helper
+  const handleSkipLead = () => {
+    if (currentLead?.id) {
+      setDraftNotes((prev) => ({ ...prev, [currentLead.id]: noteInput }));
+    }
+    let nextIdx = 0;
+    if (currentIndex < queueItems.length - 1) {
+      nextIdx = currentIndex + 1;
+    }
+    const targetQueueItem = queueItems[nextIdx];
+    setCurrentIndex(nextIdx);
+    setNoteInput(draftNotes[targetQueueItem?.lead_id] || '');
+    if (targetQueueItem?.lead_id) {
+      persistQueuePosition(targetQueueItem.lead_id, targetQueueItem.queue_position, currentUser.id);
     }
   };
 
@@ -427,7 +473,6 @@ export default function HighSpeedCallerDialer() {
       created_at: new Date().toISOString(),
     };
 
-    // Optimistically add to state immediately
     setNotes((prev) => [optimisticNote, ...prev]);
     setNoteInput('');
     setDraftNotes((prev) => {
@@ -456,22 +501,28 @@ export default function HighSpeedCallerDialer() {
           setNotes((prev) => prev.map((n) => (n.id === tempId ? data.note : n)));
         }
       } else {
-        fetchNotesForLead(currentLead.id);
+        fetchLeadLogsAndNotes(currentLead.id);
       }
     } catch (err) {
       console.error('Failed to save note:', err);
-      fetchNotesForLead(currentLead.id);
+      fetchLeadLogsAndNotes(currentLead.id);
     } finally {
       setIsSavingNote(false);
     }
   };
 
-  // Auto-advance helper (supports optional explicit audit note for Previous Call History)
-  const advanceToNextLead = (updatedLead: Lead, actionLabel: string, explicitAuditNote?: string) => {
+  // Auto-advance helper with outcome logging to call_log + dialer_queue status
+  const advanceToNextLead = async (
+    updatedLead: Lead,
+    actionLabel: string,
+    outcomeKey: string,
+    outcomeDetails?: string,
+    explicitAuditNote?: string
+  ) => {
+    if (!currentLead) return;
     const previousIndex = currentIndex;
-    const previousLead = { ...currentLead };
+    const previousLead = currentLead;
 
-    // Play chime & pop-up toast
     playNotificationChime();
 
     setUndoState({
@@ -482,22 +533,24 @@ export default function HighSpeedCallerDialer() {
 
     setTimeout(() => setUndoState(null), 4500);
 
-    const nextLeads = leads.map((l) => (l.id === updatedLead.id ? updatedLead : l));
-    setLeads(nextLeads);
+    // 1. Log call outcome in call_log + update dialer_queue.status
+    if (currentLead?.id) {
+      fetch('/api/caller/calls', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'outcome',
+          callerId: currentUser.id,
+          leadId: currentLead.id,
+          outcome: outcomeKey,
+          outcomeDetails,
+          notes: explicitAuditNote || noteInput.trim() || null,
+        }),
+      }).catch((e) => console.error('[Dialer] Error logging outcome:', e));
+    }
 
-    // 1. Explicit audit note (outcome trail)
+    // 2. Explicit audit note
     if (explicitAuditNote && currentLead?.id) {
-      const tempId = `audit-note-${Date.now()}`;
-      const optimisticAuditNote: LeadNote = {
-        id: tempId,
-        lead_id: currentLead.id,
-        author_id: currentUser.id,
-        author_name: currentUser.name,
-        note: explicitAuditNote,
-        created_at: new Date().toISOString(),
-      };
-      setNotes((prev) => [optimisticAuditNote, ...prev]);
-
       fetch('/api/notes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -507,23 +560,12 @@ export default function HighSpeedCallerDialer() {
           authorId: currentUser.id,
           authorName: currentUser.name,
         }),
-      }).catch((e) => console.error('Error saving audit note on advance:', e));
+      }).catch((e) => console.error('Error saving audit note:', e));
     }
 
-    // 2. Manual note entered by caller
+    // 3. Manual note entered by caller
     const trimmedInput = noteInput.trim();
     if (trimmedInput && currentLead?.id) {
-      const tempId = `manual-note-${Date.now()}`;
-      const optimisticNote: LeadNote = {
-        id: tempId,
-        lead_id: currentLead.id,
-        author_id: currentUser.id,
-        author_name: currentUser.name,
-        note: trimmedInput,
-        created_at: new Date().toISOString(),
-      };
-      setNotes((prev) => [optimisticNote, ...prev]);
-
       fetch('/api/notes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -533,19 +575,29 @@ export default function HighSpeedCallerDialer() {
           authorId: currentUser.id,
           authorName: currentUser.name,
         }),
-      }).catch((e) => console.error('Error saving manual note on advance:', e));
+      }).catch((e) => console.error('Error saving manual note:', e));
     }
 
     // Clear draft for current lead
     setDraftNotes((prev) => {
       const copy = { ...prev };
-      delete copy[currentLead.id];
+      delete copy[currentLead?.id || ''];
       return copy;
     });
+    setNoteInput('');
 
-    // Optimistically update local leads state so attempt count & status are immediately updated
-    setLeads((prev) =>
-      prev.map((l) => (l.id === updatedLead.id ? updatedLead : l))
+    // Update queue items state locally
+    setQueueItems((prev) =>
+      prev.map((q) => {
+        if (q.lead_id === updatedLead.id) {
+          return {
+            ...q,
+            status: outcomeKey === 'phone_not_picked' ? 'pending' : 'done',
+            lead: updatedLead,
+          };
+        }
+        return q;
+      })
     );
 
     // Persist lead status update to backend DB
@@ -568,22 +620,33 @@ export default function HighSpeedCallerDialer() {
       }),
     }).catch((e) => console.error('Error persisting lead update:', e));
 
-    setSessionCompletedCalls((prev) => prev + 1);
+    fetchCallsToday();
 
-    // Advance to next lead and load draft
-    let nextIdx = 0;
-    if (currentIndex < activeQueue.length - 1) {
+    // Advance to next pending queue item
+    let nextIdx = currentIndex;
+    const remainingPending = queueItems.findIndex(
+      (q, idx) => idx > currentIndex && q.status === 'pending'
+    );
+
+    if (remainingPending !== -1) {
+      nextIdx = remainingPending;
+    } else if (currentIndex < queueItems.length - 1) {
       nextIdx = currentIndex + 1;
+    } else {
+      nextIdx = 0;
     }
-    const nextLeadObj = activeQueue[nextIdx];
+
+    const nextQueueItem = queueItems[nextIdx];
     setCurrentIndex(nextIdx);
-    setNoteInput(draftNotes[nextLeadObj?.id] || '');
-    if (nextLeadObj?.id) {
-      persistQueuePosition(nextLeadObj.id, currentUser.id);
+    setNoteInput(draftNotes[nextQueueItem?.lead_id || ''] || '');
+    if (nextQueueItem?.lead_id) {
+      persistQueuePosition(nextQueueItem.lead_id, nextQueueItem.queue_position, currentUser.id);
     }
   };
 
   const handleStatusSelect = (status: LeadStatus) => {
+    if (!currentLead) return;
+
     if (status === 'useless') {
       setUselessModalOpen(true);
       return;
@@ -607,11 +670,14 @@ export default function HighSpeedCallerDialer() {
     advanceToNextLead(
       updated, 
       status.replace(/_/g, ' '),
+      status,
+      `Follow-up scheduled for ${schedule.next_follow_up_date || 'N/A'}`,
       `Call Outcome: Status marked as ${status.replace(/_/g, ' ').toUpperCase()} (Attempt #${attempts}).${schedule.next_follow_up_date ? ` Follow-up scheduled for ${schedule.next_follow_up_date}.` : ''}`
     );
   };
 
   const handlePhoneNotPicked = () => {
+    if (!currentLead) return;
     const attempts = (currentLead.phone_attempt_count || 0) + 1;
     const tomorrowStr = new Date(Date.now() + 86400000).toISOString().split('T')[0];
 
@@ -628,11 +694,14 @@ export default function HighSpeedCallerDialer() {
     advanceToNextLead(
       updated, 
       `PHONE NOT PICKED (Attempt #${attempts})`,
+      'phone_not_picked',
+      'Remind Tomorrow',
       `Call Outcome: Phone Not Picked (Attempt #${attempts}). Auto-rescheduled for tomorrow.`
     );
   };
 
   const handleConfirmUseless = () => {
+    if (!currentLead) return;
     const attempts = (currentLead.phone_attempt_count || 0) + 1;
     const updated: Lead = {
       ...currentLead,
@@ -649,12 +718,15 @@ export default function HighSpeedCallerDialer() {
     advanceToNextLead(
       updated, 
       `USELESS (${uselessReason})`,
+      'useless',
+      uselessReason,
       `Call Outcome: Marked as USELESS (${uselessReason.replace(/_/g, ' ')} - Attempt #${attempts}).`
     );
   };
 
   // Option A: Incoming Not Available
   const handleIncomingNotAvailable = () => {
+    if (!currentLead) return;
     const attempts = (currentLead.phone_attempt_count || 0) + 1;
     const tomorrowStr = new Date(Date.now() + 86400000).toISOString().split('T')[0];
 
@@ -680,12 +752,15 @@ export default function HighSpeedCallerDialer() {
     advanceToNextLead(
       updated, 
       'INCOMING NOT AVAILABLE',
+      'other',
+      'Incoming Not Available',
       `Call Outcome: Incoming Not Available / Switch Off (Attempt #${attempts}). Scheduled follow-up for tomorrow.`
     );
   };
 
   // Option B: Phone/Friend Picked Up
   const handlePhoneFriendPickedUp = () => {
+    if (!currentLead) return;
     const attempts = (currentLead.phone_attempt_count || 0) + 1;
     const tomorrowStr = new Date(Date.now() + 86400000).toISOString().split('T')[0];
 
@@ -711,6 +786,8 @@ export default function HighSpeedCallerDialer() {
     advanceToNextLead(
       updated, 
       'PHONE / FRIEND PICKED UP',
+      'other',
+      'Phone/Friend Picked Up',
       `Call Outcome: Phone / Friend Picked Up (Patient Unavailable - Attempt #${attempts}). Scheduled follow-up for tomorrow.`
     );
   };
@@ -719,7 +796,7 @@ export default function HighSpeedCallerDialer() {
   const handleSubmitOtherReason = (e: React.FormEvent) => {
     e.preventDefault();
     const reasonTrimmed = otherReasonCustomText.trim();
-    if (!reasonTrimmed) return;
+    if (!reasonTrimmed || !currentLead) return;
 
     const attempts = (currentLead.phone_attempt_count || 0) + 1;
     const tomorrowStr = new Date(Date.now() + 86400000).toISOString().split('T')[0];
@@ -749,45 +826,68 @@ export default function HighSpeedCallerDialer() {
     advanceToNextLead(
       updated, 
       `OTHER: ${reasonTrimmed}`,
+      'other',
+      reasonTrimmed,
       `Call Outcome - Other Reason: ${reasonTrimmed} (Attempt #${attempts})`
     );
-  };
-
-  const handleSkipLead = () => {
-    if (currentLead?.id) {
-      setDraftNotes((prev) => ({ ...prev, [currentLead.id]: noteInput }));
-    }
-    let nextIdx = 0;
-    if (currentIndex < activeQueue.length - 1) {
-      nextIdx = currentIndex + 1;
-    }
-    const targetLead = activeQueue[nextIdx];
-    setCurrentIndex(nextIdx);
-    setNoteInput(draftNotes[targetLead?.id] || '');
-    if (targetLead?.id) {
-      persistQueuePosition(targetLead.id, currentUser.id);
-    }
   };
 
   const handleUndo = () => {
     if (!undoState) return;
 
-    const restoredLeads = leads.map((l) =>
-      l.id === undoState.previousLead.id ? undoState.previousLead : l
+    setQueueItems((prev) =>
+      prev.map((q) =>
+        q.lead_id === undoState.previousLead.id
+          ? { ...q, status: 'pending', lead: undoState.previousLead }
+          : q
+      )
     );
 
-    setLeads(restoredLeads);
     setCurrentIndex(undoState.previousIndex);
-    const targetLead = restoredLeads[undoState.previousIndex];
-    setNoteInput(draftNotes[targetLead?.id] || '');
-    setSessionCompletedCalls((prev) => Math.max(0, prev - 1));
+    const targetQueueItem = queueItems[undoState.previousIndex];
+    setNoteInput(draftNotes[targetQueueItem?.lead_id || ''] || '');
     setUndoState(null);
-    if (targetLead?.id) {
-      persistQueuePosition(targetLead.id, currentUser.id);
+    if (targetQueueItem?.lead_id) {
+      persistQueuePosition(targetQueueItem.lead_id, targetQueueItem.queue_position, currentUser.id);
     }
   };
 
-  if (!currentLead) return null;
+  if (!currentLead) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-center items-center p-4">
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 text-center max-w-sm">
+          <Loader2 className="w-8 h-8 text-teal-400 animate-spin mx-auto mb-3" />
+          <h2 className="text-base font-bold text-white mb-1">Loading Dialer Queue...</h2>
+          <p className="text-xs text-slate-400">Fetching static assigned queue for caller.</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Combined Previous Call History (call_log events + lead_notes merged by time DESC)
+  const combinedHistory = [
+    ...callLogs.map((cl) => ({
+      id: cl.id,
+      type: 'call_log' as const,
+      timestamp: cl.called_at,
+      title: `Call Attempt #${cl.attempt_number}`,
+      detail: cl.outcome ? `Outcome: ${cl.outcome.replace(/_/g, ' ').toUpperCase()}${cl.outcome_details ? ` (${cl.outcome_details})` : ''}` : 'Tap to Call event recorded',
+      notes: cl.notes,
+      author: 'Caller',
+    })),
+    ...notes.filter((n) => n.lead_id === currentLead.id).map((n) => ({
+      id: n.id,
+      type: 'note' as const,
+      timestamp: n.created_at,
+      title: 'Call Note',
+      detail: n.note,
+      notes: null,
+      author: n.author_name,
+    })),
+  ].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+  const pendingQueueCount = queueItems.filter((q) => q.status === 'pending').length;
+  const convertedQueueCount = queueItems.filter((q) => q.lead?.status === 'converted').length;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between selection:bg-teal-500 selection:text-slate-950">
@@ -835,7 +935,7 @@ export default function HighSpeedCallerDialer() {
               <span className="hidden md:inline">Shift Check</span>
             </button>
 
-            {/* Back / Counter / Forward Navigation Group */}
+            {/* Back / Counter / Forward Navigation Group (Fixed Queue ±1) */}
             <div className="flex items-center bg-slate-800/90 border border-slate-700/60 rounded-lg p-0.5 space-x-1">
               <button
                 onClick={handlePrevLead}
@@ -848,12 +948,12 @@ export default function HighSpeedCallerDialer() {
               </button>
 
               <span className="px-2 py-0.5 text-xs font-mono text-slate-400 whitespace-nowrap bg-slate-900/80 rounded border border-slate-800">
-                <span className="text-white font-bold">{currentIndex + 1}</span>/{activeQueue.length}
+                <span className="text-white font-bold">{currentIndex + 1}</span>/{queueItems.length}
               </span>
 
               <button
                 onClick={handleNextLead}
-                disabled={currentIndex >= activeQueue.length - 1}
+                disabled={currentIndex >= queueItems.length - 1}
                 className="px-2 py-1 hover:bg-slate-700 disabled:opacity-30 disabled:hover:bg-transparent text-slate-300 hover:text-white rounded text-xs font-semibold flex items-center space-x-1 transition"
                 title="Next Lead (▶)"
               >
@@ -865,7 +965,7 @@ export default function HighSpeedCallerDialer() {
             <button
               onClick={handleSkipLead}
               className="inline-flex items-center space-x-1 px-2.5 py-1 sm:px-3 sm:py-1.5 bg-slate-800/80 hover:bg-slate-800 text-slate-400 hover:text-white text-xs font-medium rounded-lg transition border border-slate-700/50"
-              title="Skip Lead (moves to next, cycles at queue end)"
+              title="Skip Lead (moves to next in fixed queue)"
             >
               <span>Skip</span>
               <SkipForward className="w-3.5 h-3.5" />
@@ -901,7 +1001,7 @@ export default function HighSpeedCallerDialer() {
           {/* Status & Timing Badges Row */}
           <div className="flex flex-wrap items-center justify-center gap-1.5 sm:gap-2 mb-2">
             
-            {/* Attempt Badge */}
+            {/* Attempt Badge (Computed directly from call_log COUNT) */}
             <span className="bg-slate-950 border border-slate-800 px-2.5 py-0.5 rounded-full text-[11px] font-mono font-medium text-amber-400 shrink-0">
               Attempts: {currentLead.phone_attempt_count || 0}
             </span>
@@ -955,6 +1055,7 @@ export default function HighSpeedCallerDialer() {
           <div className="mt-3.5 w-full">
             <a
               href={`tel:${currentLead.phone}`}
+              onClick={handleTapToCall}
               className="inline-flex items-center justify-center space-x-3 w-full py-3.5 sm:py-4 px-6 bg-teal-500 hover:bg-teal-400 text-slate-950 font-black text-lg sm:text-xl rounded-xl sm:rounded-2xl transition shadow-xl hover:scale-[1.01] active:scale-95"
             >
               <Phone className="w-5 h-5 sm:w-6 sm:h-6 fill-slate-950 shrink-0" />
@@ -966,15 +1067,12 @@ export default function HighSpeedCallerDialer() {
           {(() => {
             const answers = currentLead.form_answers || {};
 
-            // 1. City
             const cityKey = Object.keys(answers).find((k) => k.toLowerCase() === 'city' || k.toLowerCase().includes('city'));
             const cityVal = cityKey ? answers[cityKey] : (currentLead as any).city;
 
-            // 2. Age (आयु_(age))
             const ageKey = Object.keys(answers).find((k) => k.includes('आयु') || k.toLowerCase().includes('age'));
             const ageVal = ageKey ? answers[ageKey] : null;
 
-            // 3. Symptom duration (आप_इस_समस्या_से_कब_से_परेशान_हैं?_*)
             const symptomKey = Object.keys(answers).find((k) => k.includes('समस्या') || k.includes('परेशान') || k.toLowerCase().includes('duration'));
             const symptomVal = symptomKey ? answers[symptomKey] : null;
 
@@ -1075,7 +1173,7 @@ export default function HighSpeedCallerDialer() {
             <QuickWhatsAppButtons
               lead={currentLead}
               currentUser={currentUser}
-              onSuccess={(msg) => {
+              onSuccess={() => {
                 playNotificationChime();
               }}
             />
@@ -1132,7 +1230,7 @@ export default function HighSpeedCallerDialer() {
             </form>
           </div>
 
-          {/* COLLAPSIBLE PREVIOUS NOTES TRAIL */}
+          {/* COLLAPSIBLE PREVIOUS CALL HISTORY (UNIFIED CALL LOG + NOTES) */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
             <button
               type="button"
@@ -1140,26 +1238,30 @@ export default function HighSpeedCallerDialer() {
               className="w-full p-3.5 text-left flex items-center justify-between text-xs font-semibold text-slate-300 hover:bg-slate-800/50 transition"
             >
               <span className="flex items-center space-x-2">
-                <span>Previous Call History ({leadNotes.length} notes)</span>
+                <span>Previous Call History ({combinedHistory.length} events)</span>
                 {notesLoading && <Loader2 className="w-3 h-3 text-teal-400 animate-spin" />}
               </span>
               {showNotesAccordion ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
             </button>
 
             {showNotesAccordion && (
-              <div className="p-3.5 pt-0 border-t border-slate-800 space-y-2 max-h-48 overflow-y-auto">
-                {leadNotes.length === 0 ? (
-                  <p className="text-xs text-slate-500 py-2">No previous notes recorded for this patient.</p>
+              <div className="p-3.5 pt-0 border-t border-slate-800 space-y-2 max-h-56 overflow-y-auto">
+                {combinedHistory.length === 0 ? (
+                  <p className="text-xs text-slate-500 py-2">No previous call events or notes recorded for this patient.</p>
                 ) : (
-                  leadNotes.map((n) => (
-                    <div key={n.id} className="bg-slate-950 p-3 rounded-xl border border-slate-800/80 text-xs space-y-1">
+                  combinedHistory.map((item) => (
+                    <div key={item.id} className="bg-slate-950 p-3 rounded-xl border border-slate-800/80 text-xs space-y-1">
                       <div className="flex justify-between items-center text-[10px] text-slate-400">
-                        <span className="font-semibold text-teal-400">{n.author_name}</span>
+                        <span className="font-semibold text-teal-400 flex items-center space-x-1">
+                          {item.type === 'call_log' ? <Phone className="w-3 h-3 text-amber-400 inline" /> : <FileText className="w-3 h-3 text-teal-400 inline" />}
+                          <span>{item.title}</span>
+                        </span>
                         <span className="font-mono">
-                          {new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {new Date(n.created_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
+                          {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {new Date(item.timestamp).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
                         </span>
                       </div>
-                      <p className="text-slate-200 leading-relaxed">{n.note}</p>
+                      <p className="text-slate-200 font-medium">{item.detail}</p>
+                      {item.notes && <p className="text-slate-400 italic text-[11px]">Note: "{item.notes}"</p>}
                     </div>
                   ))
                 )}
@@ -1171,19 +1273,19 @@ export default function HighSpeedCallerDialer() {
 
       </main>
 
-      {/* BOTTOM PACE BAR & STAT STRIP (PINNED / STICKY AT BOTTOM) */}
+      {/* BOTTOM PACE BAR & STAT STRIP (PINNED AT BOTTOM) */}
       <footer className="bg-slate-900/95 backdrop-blur-md border-t border-slate-800 px-4 py-3 sticky bottom-0 z-40 shadow-2xl">
         <div className="max-w-4xl mx-auto flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
           
           <div className="flex-1">
             <div className="flex justify-between text-xs mb-1 font-mono">
               <span className="text-slate-400">Daily Dialing Goal Pace</span>
-              <span className="text-teal-400 font-bold">{completedCallsToday} / {dailyTarget} calls</span>
+              <span className="text-teal-400 font-bold">{callsTodayCount} / {dailyTarget} calls</span>
             </div>
             <div className="w-full h-2 bg-slate-950 rounded-full overflow-hidden border border-slate-800">
               <div
                 className="h-full bg-teal-500 rounded-full transition-all duration-300"
-                style={{ width: `${Math.min(100, Math.round((completedCallsToday / dailyTarget) * 100))}%` }}
+                style={{ width: `${Math.min(100, Math.round((callsTodayCount / dailyTarget) * 100))}%` }}
               ></div>
             </div>
           </div>
@@ -1192,13 +1294,13 @@ export default function HighSpeedCallerDialer() {
             <div>
               <span className="text-slate-400">Converted: </span>
               <span className="text-emerald-400 font-bold">
-                {activeQueue.filter((l) => l.status === 'converted').length}
+                {convertedQueueCount}
               </span>
             </div>
             <div>
               <span className="text-slate-400">Queue Left: </span>
               <span className="text-amber-400 font-bold">
-                {Math.max(0, activeQueue.length - (currentIndex + 1))}
+                {pendingQueueCount}
               </span>
             </div>
           </div>
@@ -1223,18 +1325,12 @@ export default function HighSpeedCallerDialer() {
             <div className="space-y-3 my-4 bg-slate-950 p-4 rounded-xl border border-slate-800 text-xs">
               <div className="flex justify-between py-1 border-b border-slate-800">
                 <span className="text-slate-400">Total Calls Completed Today:</span>
-                <span className="font-bold text-teal-400">{completedCallsToday}</span>
+                <span className="font-bold text-teal-400">{callsTodayCount}</span>
               </div>
               <div className="flex justify-between py-1 border-b border-slate-800">
-                <span className="text-slate-400">Overdue Follow-ups Remaining:</span>
-                <span className="font-bold text-rose-400">
-                  {myQueue.filter((l) => l.next_follow_up_date && l.next_follow_up_date < new Date().toISOString().split('T')[0]).length}
-                </span>
-              </div>
-              <div className="flex justify-between py-1">
-                <span className="text-slate-400">Due Today Remaining:</span>
+                <span className="text-slate-400">Queue Items Remaining:</span>
                 <span className="font-bold text-amber-400">
-                  {myQueue.filter((l) => l.next_follow_up_date === new Date().toISOString().split('T')[0]).length}
+                  {pendingQueueCount}
                 </span>
               </div>
             </div>
@@ -1249,7 +1345,7 @@ export default function HighSpeedCallerDialer() {
               <button
                 onClick={() => {
                   setEndOfShiftModalOpen(false);
-                  sendBrowserNotification('Shift Completed!', `Great job! You completed ${completedCallsToday} calls today.`);
+                  sendBrowserNotification('Shift Completed!', `Great job! You completed ${callsTodayCount} calls today.`);
                 }}
                 className="px-4 py-2 bg-teal-500 hover:bg-teal-400 text-slate-950 text-xs font-bold rounded-xl transition shadow"
               >
@@ -1442,17 +1538,6 @@ export default function HighSpeedCallerDialer() {
           currentUser={currentUser}
           onReminderSet={(newReminder) => {
             setReminders((prev) => [newReminder, ...prev.filter((r) => r.lead_id !== newReminder.lead_id)]);
-            setLeads((prev) =>
-              prev.map((l) =>
-                l.id === currentLead.id
-                  ? {
-                      ...l,
-                      next_follow_up_date: new Date(newReminder.remind_at).toISOString().split('T')[0],
-                      next_follow_up_time: new Date(newReminder.remind_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                    }
-                  : l
-              )
-            );
           }}
         />
       )}
@@ -1461,10 +1546,10 @@ export default function HighSpeedCallerDialer() {
       <ReminderNotificationBanner
         currentUser={currentUser}
         onCallLead={(leadId) => {
-          const idx = myQueue.findIndex((l) => l.id === leadId);
+          const idx = queueItems.findIndex((q) => q.lead_id === leadId || q.lead?.id === leadId);
           if (idx !== -1) {
             setCurrentIndex(idx);
-            persistQueuePosition(leadId, currentUser.id);
+            persistQueuePosition(leadId, queueItems[idx].queue_position, currentUser.id);
           }
         }}
       />

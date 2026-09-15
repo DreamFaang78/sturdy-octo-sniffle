@@ -13,6 +13,7 @@ export interface Profile {
   phone?: string;
   role: UserRole;
   is_active: boolean;
+  current_queue_position?: number;
   created_at: string;
   updated_at?: string;
 }
@@ -192,5 +193,30 @@ export interface PatientCareJourney {
   step3_call_completed_at?: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export type QueueStatus = 'pending' | 'done';
+
+export interface DialerQueueItem {
+  id: string;
+  caller_id: string;
+  lead_id: string;
+  queue_position: number;
+  status: QueueStatus;
+  assigned_at: string;
+
+  // Joined lead data
+  lead?: Lead;
+}
+
+export interface CallLog {
+  id: string;
+  caller_id?: string | null;
+  lead_id: string;
+  called_at: string;
+  attempt_number: number;
+  outcome?: LeadStatus | 'other' | null;
+  outcome_details?: string | null;
+  notes?: string | null;
 }
 

@@ -209,7 +209,31 @@ CREATE TABLE IF NOT EXISTS public.call_reminders (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 13. ENSURE ALL COLUMNS ON EXISTING TABLES (IDEMPOTENT MIGRATION)
+-- 13. DIALER QUEUE TABLE (STATIC QUEUE PER CALLER)
+CREATE TABLE IF NOT EXISTS public.dialer_queue (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    caller_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    lead_id UUID NOT NULL REFERENCES public.leads(id) ON DELETE CASCADE,
+    queue_position INT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending', -- 'pending', 'done'
+    assigned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_dialer_queue_caller_lead UNIQUE (caller_id, lead_id)
+);
+
+-- 14. CALL LOG TABLE (EVERY CALL TAP EVENT & OUTCOME LOGGING)
+CREATE TABLE IF NOT EXISTS public.call_log (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    caller_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+    lead_id UUID NOT NULL REFERENCES public.leads(id) ON DELETE CASCADE,
+    called_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    attempt_number INT NOT NULL DEFAULT 1,
+    outcome TEXT, -- 'qualified', 'phone_not_picked', 'useless', 'converted', 'other'
+    outcome_details TEXT,
+    notes TEXT
+);
+
+-- 15. ENSURE ALL COLUMNS ON EXISTING TABLES (IDEMPOTENT MIGRATION)
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS current_queue_position INT DEFAULT 1;
 ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS phone_attempt_count INT NOT NULL DEFAULT 0;
 ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS form_answers JSONB DEFAULT '{}'::jsonb;
 ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS last_contacted_at TIMESTAMPTZ;
@@ -222,7 +246,7 @@ ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS order_status order_status_enum
 ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS rto_reason TEXT;
 ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS rto_flagged_at TIMESTAMPTZ;
 
--- 14. INDEXES
+-- 16. INDEXES
 CREATE INDEX IF NOT EXISTS idx_leads_assigned_to ON public.leads(assigned_to);
 CREATE INDEX IF NOT EXISTS idx_leads_status ON public.leads(status);
 CREATE INDEX IF NOT EXISTS idx_leads_next_follow_up ON public.leads(next_follow_up_date);
@@ -232,6 +256,23 @@ CREATE INDEX IF NOT EXISTS idx_status_history_lead_id ON public.status_history(l
 CREATE INDEX IF NOT EXISTS idx_call_reminders_lead_id ON public.call_reminders(lead_id);
 CREATE INDEX IF NOT EXISTS idx_call_reminders_status ON public.call_reminders(status);
 CREATE INDEX IF NOT EXISTS idx_settings_key ON public.settings(key);
+CREATE INDEX IF NOT EXISTS idx_dialer_queue_caller_pos ON public.dialer_queue(caller_id, queue_position);
+CREATE INDEX IF NOT EXISTS idx_dialer_queue_status ON public.dialer_queue(status);
+CREATE INDEX IF NOT EXISTS idx_call_log_caller ON public.call_log(caller_id);
+CREATE INDEX IF NOT EXISTS idx_call_log_lead ON public.call_log(lead_id);
+CREATE INDEX IF NOT EXISTS idx_call_log_called_at ON public.call_log(called_at);
+
+-- 17. BACKFILL EXISTING ASSIGNED LEADS INTO DIALER QUEUE (IDEMPOTENT)
+INSERT INTO public.dialer_queue (caller_id, lead_id, queue_position, status, assigned_at)
+SELECT 
+    l.assigned_to AS caller_id,
+    l.id AS lead_id,
+    ROW_NUMBER() OVER (PARTITION BY l.assigned_to ORDER BY l.created_at ASC) AS queue_position,
+    CASE WHEN l.status IN ('qualified', 'useless', 'converted') THEN 'done' ELSE 'pending' END AS status,
+    COALESCE(l.assigned_at, l.created_at) AS assigned_at
+FROM public.leads l
+WHERE l.assigned_to IS NOT NULL
+ON CONFLICT (caller_id, lead_id) DO NOTHING;
 
 -- 15. ROW LEVEL SECURITY (RLS) POLICIES & RE-RUN SAFETY
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
@@ -321,6 +362,15 @@ CREATE POLICY "Admin access to patient_care_journey" ON public.patient_care_jour
 DROP POLICY IF EXISTS "Access to call_reminders" ON public.call_reminders;
 CREATE POLICY "Access to call_reminders" ON public.call_reminders FOR ALL USING (true);
 
+ALTER TABLE public.dialer_queue ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.call_log ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Access to dialer_queue" ON public.dialer_queue;
+CREATE POLICY "Access to dialer_queue" ON public.dialer_queue FOR ALL USING (true);
+
+DROP POLICY IF EXISTS "Access to call_log" ON public.call_log;
+CREATE POLICY "Access to call_log" ON public.call_log FOR ALL USING (true);
+
 -- Realtime Publication (Safe Add)
 DO $$ BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE public.leads;
@@ -345,3 +395,16 @@ DO $$ BEGIN
 EXCEPTION
     WHEN OTHERS THEN NULL;
 END $$;
+
+DO $$ BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.dialer_queue;
+EXCEPTION
+    WHEN OTHERS THEN NULL;
+END $$;
+
+DO $$ BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.call_log;
+EXCEPTION
+    WHEN OTHERS THEN NULL;
+END $$;
+

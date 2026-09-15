@@ -117,6 +117,11 @@ export async function PATCH(req: Request) {
         }
 
         await supabase.from('leads').update(updatePayload).eq('id', update.id);
+
+        if (validUuid) {
+          const { enqueueLeadsForCaller } = await import('@/lib/dialer');
+          await enqueueLeadsForCaller(supabase, validUuid, update.id);
+        }
       }
       return NextResponse.json({ success: true, count: body.updates.length });
     }
@@ -186,6 +191,12 @@ export async function PATCH(req: Request) {
       console.error('[API /leads PATCH] Supabase update error:', error);
       throw error;
     }
+
+    if (assigned_to && isUuid(assigned_to)) {
+      const { enqueueLeadsForCaller } = await import('@/lib/dialer');
+      await enqueueLeadsForCaller(supabase, assigned_to, id);
+    }
+
 
     return NextResponse.json({ success: true, lead: data });
   } catch (err: any) {

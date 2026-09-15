@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
 
     const { assignedLeads } = distributeLeadsEvenly(unassignedLeads, callers);
 
-    // Update each lead in Supabase
+    // Update each lead in Supabase and write to dialer_queue
     const now = new Date().toISOString();
     for (const item of assignedLeads) {
       await supabase
@@ -51,6 +51,20 @@ export async function POST(req: NextRequest) {
         })
         .eq('id', item.leadId);
     }
+
+    // Group assigned lead IDs by callerId and enqueue into dialer_queue
+    const callerGroupMap = new Map<string, string[]>();
+    for (const item of assignedLeads) {
+      const list = callerGroupMap.get(item.callerId) || [];
+      list.push(item.leadId);
+      callerGroupMap.set(item.callerId, list);
+    }
+
+    const { enqueueLeadsForCaller } = await import('@/lib/dialer');
+    for (const [callerId, leadIds] of callerGroupMap.entries()) {
+      await enqueueLeadsForCaller(supabase, callerId, leadIds);
+    }
+
 
     return NextResponse.json({
       success: true,

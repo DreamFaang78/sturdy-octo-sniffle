@@ -19,6 +19,8 @@ import {
 
 import DialpadWidget from '@/components/DialpadWidget';
 
+import { createClient } from '@/lib/supabase/client';
+
 interface NavbarProps {
   userRole?: 'admin' | 'caller';
   userName?: string;
@@ -30,9 +32,15 @@ export default function Navbar({ userRole = 'admin', userName = 'Agam Singh', on
   const router = useRouter();
   const [isDialpadOpen, setIsDialpadOpen] = useState(false);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      const supabase = createClient();
+      await supabase.auth.signOut();
+    } catch (e) {}
+
     if (typeof window !== 'undefined') {
       localStorage.removeItem('hommed_user_session');
+      document.cookie = 'hommed_user_session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
     }
     router.push('/login');
   };

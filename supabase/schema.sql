@@ -365,11 +365,44 @@ CREATE POLICY "Access to call_reminders" ON public.call_reminders FOR ALL USING 
 ALTER TABLE public.dialer_queue ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.call_log ENABLE ROW LEVEL SECURITY;
 
+-- Dialer Queue RLS Policies
 DROP POLICY IF EXISTS "Access to dialer_queue" ON public.dialer_queue;
-CREATE POLICY "Access to dialer_queue" ON public.dialer_queue FOR ALL USING (true);
+DROP POLICY IF EXISTS "Admin full access to dialer_queue" ON public.dialer_queue;
+CREATE POLICY "Admin full access to dialer_queue" ON public.dialer_queue FOR ALL USING (
+    EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
+);
 
+DROP POLICY IF EXISTS "Caller read own dialer_queue" ON public.dialer_queue;
+CREATE POLICY "Caller read own dialer_queue" ON public.dialer_queue FOR SELECT USING (
+    caller_id = auth.uid()
+);
+
+DROP POLICY IF EXISTS "Caller update own dialer_queue" ON public.dialer_queue;
+CREATE POLICY "Caller update own dialer_queue" ON public.dialer_queue FOR UPDATE USING (
+    caller_id = auth.uid()
+);
+
+-- Call Log RLS Policies
 DROP POLICY IF EXISTS "Access to call_log" ON public.call_log;
-CREATE POLICY "Access to call_log" ON public.call_log FOR ALL USING (true);
+DROP POLICY IF EXISTS "Admin full access to call_log" ON public.call_log;
+CREATE POLICY "Admin full access to call_log" ON public.call_log FOR ALL USING (
+    EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
+);
+
+DROP POLICY IF EXISTS "Caller read own call_log" ON public.call_log;
+CREATE POLICY "Caller read own call_log" ON public.call_log FOR SELECT USING (
+    caller_id = auth.uid()
+);
+
+DROP POLICY IF EXISTS "Caller insert own call_log" ON public.call_log;
+CREATE POLICY "Caller insert own call_log" ON public.call_log FOR INSERT WITH CHECK (
+    caller_id = auth.uid()
+);
+
+DROP POLICY IF EXISTS "Caller update own call_log" ON public.call_log;
+CREATE POLICY "Caller update own call_log" ON public.call_log FOR UPDATE USING (
+    caller_id = auth.uid()
+);
 
 -- Realtime Publication (Safe Add)
 DO $$ BEGIN

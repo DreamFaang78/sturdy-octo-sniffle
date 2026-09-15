@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const supabase = createAdminClient();
-    const id = params.id;
+    const { id } = await params;
     const body = await req.json();
 
     const { data, error } = await supabase
@@ -21,10 +21,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   }
 }
 
-export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const supabase = createAdminClient();
-    const id = params.id;
+    const { id } = await params;
 
     // Delete from auth.users (cascades to profiles)
     const { error } = await supabase.auth.admin.deleteUser(id);

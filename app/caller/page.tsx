@@ -32,6 +32,7 @@ import {
 } from '@/lib/notifications';
 import { createClient } from '@/lib/supabase/client';
 import ReminderNotificationBanner from '@/components/ReminderNotificationBanner';
+import LeadNameCell from '@/components/LeadNameCell';
 
 async function fetchLeadsFromApi(callerId?: string): Promise<Lead[]> {
   try {
@@ -268,9 +269,9 @@ export default function CallerDashboard() {
                     className="bg-slate-900 border border-amber-500/20 rounded-xl p-4 flex flex-col justify-between h-[180px] shadow-md hover:border-amber-500/40 transition-all"
                   >
                     <div>
-                      {/* Name & Status Row (Truncates Cleanly) */}
-                      <div className="flex items-center justify-between gap-2">
-                        {formatLeadNameWithFlame(lead.name)}
+                      {/* Name & Status Row (Truncates Cleanly with LeadNameCell) */}
+                      <div className="flex items-start justify-between gap-2 min-w-0">
+                        <LeadNameCell name={lead.name} className="flex-1 min-w-0" />
                         <div className="shrink-0">{getStatusBadge(lead.status)}</div>
                       </div>
 
@@ -388,8 +389,7 @@ export default function CallerDashboard() {
                           
                           {/* PATIENT NAME & PHONE */}
                           <td className="py-3.5 px-4 align-middle">
-                            {formatLeadNameWithFlame(lead.name)}
-                            <div className="text-slate-400 font-mono text-xs mt-0.5">{lead.phone}</div>
+                            <LeadNameCell name={lead.name} phone={lead.phone} />
                           </td>
 
                           {/* CAMPAIGN / SOURCE */}

@@ -49,6 +49,7 @@ import { createClient } from '@/lib/supabase/client';
 import QuickWhatsAppButtons from '@/components/QuickWhatsAppButtons';
 import RemindMeLaterModal from '@/components/RemindMeLaterModal';
 import ReminderNotificationBanner from '@/components/ReminderNotificationBanner';
+import LeadNameCell from '@/components/LeadNameCell';
 
 async function fetchCallerQueueFromApi(callerId: string): Promise<{ queue: DialerQueueItem[]; currentQueuePosition: number }> {
   try {
@@ -1079,9 +1080,9 @@ export default function HighSpeedCallerDialer() {
           )}
 
           {/* Patient Name & Subtitle */}
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight leading-tight">
-            {currentLead.name}
-          </h1>
+          <div className="flex justify-center my-1">
+            <LeadNameCell name={currentLead.name} className="items-center justify-center text-center" />
+          </div>
 
           <div className="text-[11px] text-slate-400 mt-0.5 font-mono">
             {currentLead.campaign || 'Hommed Facebook Lead Ads'}

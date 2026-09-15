@@ -83,6 +83,8 @@ export default function HighSpeedCallerDialer() {
   const [remindModalOpen, setRemindModalOpen] = useState(false);
   const [reminders, setReminders] = useState<CallReminder[]>([]);
   const [callsTodayCount, setCallsTodayCount] = useState(0);
+  const [convertedTodayCount, setConvertedTodayCount] = useState(0);
+  const [queueLeftCount, setQueueLeftCount] = useState(0);
 
   const [otherReasonModalOpen, setOtherReasonModalOpen] = useState(false);
   const [selectedOtherSubOption, setSelectedOtherSubOption] = useState<'incoming_na' | 'friend_picked' | 'other' | null>(null);
@@ -160,6 +162,8 @@ export default function HighSpeedCallerDialer() {
       if (res.ok) {
         const data = await res.json();
         setCallsTodayCount(data.callsTodayCount || 0);
+        setConvertedTodayCount(data.convertedTodayCount || 0);
+        setQueueLeftCount(data.queueLeftCount || 0);
       }
     } catch (e) {}
   };
@@ -391,7 +395,7 @@ export default function HighSpeedCallerDialer() {
       if (res.ok) {
         const json = await res.json();
         if (json.attemptNumber) {
-          // Immediately update attempt count in UI
+          // Immediately update attempt count in UI & top pace bar
           setQueueItems((prev) =>
             prev.map((q) =>
               q.lead_id === currentLead.id && q.lead
@@ -399,6 +403,7 @@ export default function HighSpeedCallerDialer() {
                 : q
             )
           );
+          setCallsTodayCount((prev) => prev + 1);
           fetchLeadLogsAndNotes(currentLead.id);
           fetchCallsToday();
         }
@@ -893,8 +898,8 @@ export default function HighSpeedCallerDialer() {
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between selection:bg-teal-500 selection:text-slate-950">
       
       {/* TOP HEADER */}
-      <header className="bg-slate-900/95 backdrop-blur-md border-b border-slate-800 px-3 sm:px-4 py-2.5 sticky top-0 z-40">
-        <div className="max-w-4xl mx-auto flex items-center justify-between gap-2">
+      <header className="bg-slate-900/95 backdrop-blur-md border-b border-slate-800 sticky top-0 z-40 shadow-xl">
+        <div className="max-w-4xl mx-auto px-3 sm:px-4 py-2.5 flex items-center justify-between gap-2">
           
           <div className="flex items-center space-x-2 sm:space-x-3">
             <Link
@@ -972,6 +977,37 @@ export default function HighSpeedCallerDialer() {
             </button>
           </div>
 
+        </div>
+
+        {/* STICKY SLIM DAILY DIALING GOAL PACE BAR */}
+        <div className="bg-slate-950/90 border-t border-slate-800/80 px-3 sm:px-4 py-2">
+          <div className="max-w-4xl mx-auto flex flex-col xs:flex-row xs:items-center justify-between gap-2 text-xs font-mono">
+            <div className="flex items-center space-x-2.5 flex-1 min-w-0">
+              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">
+                Daily Dialing Goal Pace:
+              </span>
+              <div className="flex-1 max-w-xs h-2 bg-slate-900 rounded-full overflow-hidden border border-slate-800">
+                <div
+                  className="h-full bg-teal-500 rounded-full transition-all duration-300"
+                  style={{ width: `${Math.min(100, Math.round((callsTodayCount / dailyTarget) * 100))}%` }}
+                ></div>
+              </div>
+              <span className="text-xs font-bold text-teal-400 whitespace-nowrap">
+                {callsTodayCount} / {dailyTarget} calls
+              </span>
+            </div>
+
+            <div className="flex items-center space-x-4 text-xs font-mono shrink-0">
+              <div>
+                <span className="text-slate-400">Converted: </span>
+                <span className="text-emerald-400 font-bold">{convertedTodayCount}</span>
+              </div>
+              <div>
+                <span className="text-slate-400">Queue Left: </span>
+                <span className="text-amber-400 font-bold">{queueLeftCount}</span>
+              </div>
+            </div>
+          </div>
         </div>
       </header>
 
@@ -1273,40 +1309,7 @@ export default function HighSpeedCallerDialer() {
 
       </main>
 
-      {/* BOTTOM PACE BAR & STAT STRIP (PINNED AT BOTTOM) */}
-      <footer className="bg-slate-900/95 backdrop-blur-md border-t border-slate-800 px-4 py-3 sticky bottom-0 z-40 shadow-2xl">
-        <div className="max-w-4xl mx-auto flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
-          
-          <div className="flex-1">
-            <div className="flex justify-between text-xs mb-1 font-mono">
-              <span className="text-slate-400">Daily Dialing Goal Pace</span>
-              <span className="text-teal-400 font-bold">{callsTodayCount} / {dailyTarget} calls</span>
-            </div>
-            <div className="w-full h-2 bg-slate-950 rounded-full overflow-hidden border border-slate-800">
-              <div
-                className="h-full bg-teal-500 rounded-full transition-all duration-300"
-                style={{ width: `${Math.min(100, Math.round((callsTodayCount / dailyTarget) * 100))}%` }}
-              ></div>
-            </div>
-          </div>
 
-          <div className="flex items-center space-x-4 text-xs font-mono shrink-0">
-            <div>
-              <span className="text-slate-400">Converted: </span>
-              <span className="text-emerald-400 font-bold">
-                {convertedQueueCount}
-              </span>
-            </div>
-            <div>
-              <span className="text-slate-400">Queue Left: </span>
-              <span className="text-amber-400 font-bold">
-                {pendingQueueCount}
-              </span>
-            </div>
-          </div>
-
-        </div>
-      </footer>
 
       {/* END OF SHIFT POPUP MODAL */}
       {endOfShiftModalOpen && (

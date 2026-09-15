@@ -25,18 +25,39 @@ export async function GET(req: NextRequest) {
     }
 
     if (callerId && today) {
-      const todayStr = new Date().toISOString().split('T')[0];
-      const { data, error, count } = await supabase
-        .from('call_log')
-        .select('*', { count: 'exact' })
-        .eq('caller_id', callerId)
-        .gte('called_at', `${todayStr}T00:00:00.000Z`);
+      // Local today start (midnight local)
+      const now = new Date();
+      const localTodayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
 
-      if (error) throw error;
+      // 1. Total call taps today from call_log
+      const { count: callsTodayCount, error: callsErr } = await supabase
+        .from('call_log')
+        .select('*', { count: 'exact', head: true })
+        .eq('caller_id', callerId)
+        .gte('called_at', localTodayStart);
+
+      if (callsErr) throw callsErr;
+
+      // 2. Total converted calls today from call_log
+      const { count: convertedTodayCount } = await supabase
+        .from('call_log')
+        .select('*', { count: 'exact', head: true })
+        .eq('caller_id', callerId)
+        .eq('outcome', 'converted')
+        .gte('called_at', localTodayStart);
+
+      // 3. Queue left (pending items in dialer_queue)
+      const { count: queueLeftCount } = await supabase
+        .from('dialer_queue')
+        .select('*', { count: 'exact', head: true })
+        .eq('caller_id', callerId)
+        .eq('status', 'pending');
+
       return NextResponse.json({
         success: true,
-        callsTodayCount: count || 0,
-        calls: data || [],
+        callsTodayCount: callsTodayCount || 0,
+        convertedTodayCount: convertedTodayCount || 0,
+        queueLeftCount: queueLeftCount || 0,
       });
     }
 
